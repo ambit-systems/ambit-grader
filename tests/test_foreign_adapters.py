@@ -11,9 +11,9 @@ authority, because none of them records on whose authority an action was taken.
 
 from __future__ import annotations
 
-from ambit_grader import Property, Sufficiency, grade_records
 from typing import Any
 
+from ambit_grader import Property, Sufficiency, grade_records
 from ambit_grader.adapters import foreign
 
 OTEL_SPAN: dict[str, Any] = {

@@ -85,6 +85,52 @@ def _first(record: dict[str, Any], *paths: str) -> Any:
     return None
 
 
+def expand_agt_bom_fields(record: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a Microsoft AGT Decision BOM's ``fields`` list into lookupable paths.
+
+    AGT does not put identity or policy content in named schema slots. It
+    carries an open list of ``BOMField(name, category, value, source,
+    confidence, inferred)``, categorised as identity / trust / policy / action
+    / context / outcome / lineage. A flat-path lookup cannot see inside that
+    list, so an AGT record could name a principal and we would report the
+    property unfillable — the grader wrong in its own favour, pointed at a
+    competitor's evidence instead of ours.
+
+    Two of AGT's own per-field flags are load-bearing and are preserved:
+
+    * ``inferred`` — "reconstructed rather than directly observed". AGT is
+      telling us it worked the value out rather than witnessed it. A
+      reconstruction is not evidence that someone approved, so inferred
+      fields are expanded under a separate key and never lifted as a
+      principal. Crediting them would be accepting a competitor's inference
+      as our observation.
+    * ``confidence`` — carried through, because §3.5's partial weight is a
+      confidence and AGT has already computed one.
+    """
+    fields = record.get("fields")
+    if not isinstance(fields, list):
+        return record
+
+    observed: dict[str, dict[str, Any]] = {}
+    inferred: dict[str, dict[str, Any]] = {}
+    for entry in fields:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        category = entry.get("category")
+        if not isinstance(name, str) or not isinstance(category, str):
+            continue
+        bucket = inferred if entry.get("inferred") is True else observed
+        bucket.setdefault(category, {})[name] = entry
+
+    out = dict(record)
+    if observed:
+        out["_agt_observed"] = observed
+    if inferred:
+        out["_agt_inferred"] = inferred
+    return out
+
+
 @dataclass(frozen=True, slots=True)
 class Profile:
     """One emitter's mapping onto the canonical shape.
@@ -112,9 +158,13 @@ class Profile:
     verdict: tuple[str, ...] = ()
     policy: tuple[str, ...] = ()
     approver: tuple[str, ...] = ()
+    expand: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+    """Optional pre-pass for formats that nest evidence in a list."""
 
     def apply(self, record: dict[str, Any]) -> dict[str, Any]:
         """Map a record onto canonical paths, omitting anything not present."""
+        if self.expand is not None:
+            record = self.expand(record)
         out: dict[str, Any] = dict(record)
 
         actor = _first(record, *self.actor)
@@ -239,16 +289,44 @@ WEAVE = Profile(
 #: Microsoft Agent Governance Toolkit decision records. The only widely-used
 #: format that carries a governance verdict — and it still names no principal:
 #: the record says what was decided, not who authorised it.
+#: Microsoft Agent Governance Toolkit — decision records and Decision BOMs.
+#:
+#: The only widely-used foreign format that carries a governance verdict. Its
+#: schema names ``agent_id`` (the actor) and no approver, principal or reviewer
+#: — the subject-not-issuer shape again — but its open ``fields`` list can
+#: carry identity- and policy-category entries, which :func:`expand_agt_bom_fields`
+#: makes visible. Only *observed* entries are read; AGT's own ``inferred``
+#: reconstructions are expanded separately and never lifted as a principal.
 MS_AGT = Profile(
     name="microsoft_agt",
-    detect=lambda r: "decision" in r and ("policy_id" in r or "agent_id" in r or "agt" in r),
+    detect=lambda r: (
+        ("decision" in r and ("policy_id" in r or "agent_id" in r or "agt" in r))
+        or ("decision_id" in r and "agent_id" in r and "outcome" in r)
+    ),
+    expand=expand_agt_bom_fields,
     actor=("agent_id", "agent.id", "principal_id"),
-    tool=("tool", "tool_name", "action.tool"),
-    action_type=("action", "action.type", "operation"),
+    tool=("tool", "tool_name", "action.tool", "action_requested"),
+    action_type=("action", "action.type", "operation", "action_requested"),
     object_id=("resource", "resource_id", "target"),
     timestamp=("timestamp", "time", "occurred_at"),
     verdict=("decision", "decision.outcome", "outcome", "result"),
-    policy=("policy_id", "policy_version", "policy.id"),
+    policy=(
+        "policy_id",
+        "policy_version",
+        "policy.id",
+        # Observed policy-category BOM entries, by the names AGT uses.
+        "_agt_observed.policy.policy_id.value",
+        "_agt_observed.policy.policy_version.value",
+        "_agt_observed.policy.policy_name.value",
+    ),
+    approver=(
+        # Observed identity-category BOM entries only. An inferred approver is
+        # AGT's reconstruction, not a record that anyone approved.
+        "_agt_observed.identity.approver.value",
+        "_agt_observed.identity.approved_by.value",
+        "_agt_observed.identity.reviewer.value",
+        "_agt_observed.identity.principal.value",
+    ),
 )
 
 #: Ordered by detection specificity: the governance format first, then the

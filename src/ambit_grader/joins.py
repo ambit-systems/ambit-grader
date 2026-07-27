@@ -294,6 +294,21 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
             ),
             detail=detail,
         )
+    if unaccounted == len(permitted):
+        # Nothing recoverable at all. `partially_fillable` means recoverable
+        # evidence plus a gap description; where every permitted action lacks
+        # a principal, a policy and a delegation alike, there is no evidence
+        # to partially recover and reporting one would be generous.
+        return PropertyVerdict(
+            Property.PRINCIPAL_AUTHORITY,
+            Sufficiency.STRUCTURALLY_UNFILLABLE,
+            reason=UnfillableReason.EVIDENCE_NEVER_PERSISTED,
+            recommendation=(
+                f"give the {unaccounted} permitted action(s) an authority basis — a policy "
+                "identity at minimum, a delegation or approval where consequential"
+            ),
+            detail=detail,
+        )
     if unaccounted:
         return PropertyVerdict(
             Property.PRINCIPAL_AUTHORITY,

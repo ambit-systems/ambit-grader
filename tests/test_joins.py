@@ -139,3 +139,29 @@ def test_absent_fields_are_reported_as_never_persisted():
     graded = grade_records("bare", [_decision(0, "ALLOW", "0" * 64, "h1")])
     data_touch = graded.verdicts[Property.DATA_TOUCH]
     assert data_touch.reason is UnfillableReason.EVIDENCE_NEVER_PERSISTED
+
+
+def test_all_permitted_actions_unaccounted_is_unfillable_not_partial():
+    """Nothing recoverable is not the same as partially recoverable.
+
+    DEMM's partially_fillable means recoverable evidence plus a gap
+    description. Where every permitted action lacks a principal, a policy and
+    a delegation alike, there is nothing to partially recover.
+    """
+    records = [_decision(0, "ALLOW", "0" * 64, "h1")]
+    verdict = principal_authority(records)
+    assert verdict.sufficiency is Sufficiency.STRUCTURALLY_UNFILLABLE
+    assert "1 with no authority evidence at all" in (verdict.detail or "")
+
+
+def test_some_unaccounted_stays_partial():
+    """A mixed corpus keeps its recoverable share."""
+    attributed = _decision(
+        0,
+        "ESCALATE",
+        "0" * 64,
+        "h1",
+        approval={"approver": "a", "fingerprint_bound": True, "valid": True},
+    )
+    bare = _decision(1, "ALLOW", "h1", "h2")
+    assert principal_authority([attributed, bare]).sufficiency is (Sufficiency.PARTIALLY_FILLABLE)

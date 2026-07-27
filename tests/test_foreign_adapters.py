@@ -204,3 +204,123 @@ def test_profiles_never_invent_absent_fields():
     assert "actor_id" not in mapped
     assert "policy_hash" not in mapped
     assert "decision" not in mapped
+
+
+# --- Microsoft AGT Decision BOM -------------------------------------------
+# Shaped after agent-governance-python/agent-mesh/.../governance/decision_bom.py:
+# DecisionBOM(decision_id, timestamp, agent_id, action_requested, outcome,
+# fields[BOMField(name, category, value, source, confidence, inferred)],
+# reconstructed_at, sources_queried, completeness_score).
+
+AGT_BOM_BARE: dict[str, Any] = {
+    "decision_id": "d-1",
+    "timestamp": "2026-07-28T09:00:00Z",
+    "agent_id": "agent-ops",
+    "action_requested": "storage.delete",
+    "outcome": "allow",
+    "fields": [
+        {
+            "name": "trust_score",
+            "category": "trust",
+            "value": 0.91,
+            "source": "trust_source",
+            "confidence": 1.0,
+            "inferred": False,
+        },
+    ],
+    "completeness_score": 0.4,
+}
+
+AGT_BOM_WITH_OBSERVED_APPROVER: dict[str, Any] = {
+    **AGT_BOM_BARE,
+    "decision_id": "d-2",
+    "fields": [
+        {
+            "name": "approver",
+            "category": "identity",
+            "value": "ops-lead@example",
+            "source": "audit_source",
+            "confidence": 1.0,
+            "inferred": False,
+        },
+        {
+            "name": "policy_id",
+            "category": "policy",
+            "value": "pol-42",
+            "source": "policy_source",
+            "confidence": 1.0,
+            "inferred": False,
+        },
+    ],
+}
+
+AGT_BOM_WITH_INFERRED_APPROVER: dict[str, Any] = {
+    **AGT_BOM_BARE,
+    "decision_id": "d-3",
+    "fields": [
+        {
+            "name": "approver",
+            "category": "identity",
+            "value": "ops-lead@example",
+            "source": "trace_source",
+            "confidence": 0.6,
+            "inferred": True,
+        },
+    ],
+}
+
+
+def test_agt_bom_is_detected_and_its_nested_fields_are_read():
+    """A flat-path lookup cannot see inside AGT's `fields` list."""
+    from ambit_grader.adapters.normalise import normalise_record
+
+    profile = foreign.match(AGT_BOM_WITH_OBSERVED_APPROVER)
+    assert profile is not None and profile.name == "microsoft_agt"
+
+    mapped = normalise_record(AGT_BOM_WITH_OBSERVED_APPROVER)
+    assert mapped is not None
+    assert mapped["policy_hash"] == "pol-42"
+    assert mapped["approval"]["approver"] == "ops-lead@example"
+
+
+def test_agt_with_an_observed_approver_can_name_a_principal():
+    """If AGT's evidence really names an approver, the grader must say so.
+
+    Refusing to read it would be the grader wrong in its own favour, pointed
+    at a competitor's evidence — and it would make the headline finding a
+    false negative rather than a finding.
+    """
+    graded = grade_records("agt-observed", [AGT_BOM_WITH_OBSERVED_APPROVER])
+    assert (
+        graded.verdicts[Property.PRINCIPAL_AUTHORITY].sufficiency
+        is not Sufficiency.STRUCTURALLY_UNFILLABLE
+    )
+
+
+def test_agt_inferred_approver_is_never_credited_as_a_principal():
+    """`inferred: true` is AGT reconstructing, not witnessing.
+
+    Crediting it would accept a competitor's inference as our observation —
+    the container fallacy borrowed from someone else's tool.
+    """
+    graded = grade_records("agt-inferred", [AGT_BOM_WITH_INFERRED_APPROVER])
+    assert (
+        graded.verdicts[Property.PRINCIPAL_AUTHORITY].sufficiency
+        is Sufficiency.STRUCTURALLY_UNFILLABLE
+    )
+
+
+def test_agt_without_identity_fields_still_reports_the_finding():
+    """The headline finding survives: a bare BOM names no principal."""
+    graded = grade_records("agt-bare", [AGT_BOM_BARE])
+    assert (
+        graded.verdicts[Property.PRINCIPAL_AUTHORITY].sufficiency
+        is Sufficiency.STRUCTURALLY_UNFILLABLE
+    )
+
+
+def test_agt_expansion_separates_observed_from_inferred():
+    expanded = foreign.expand_agt_bom_fields(AGT_BOM_WITH_INFERRED_APPROVER)
+    assert "_agt_inferred" in expanded
+    assert "_agt_observed" not in expanded
+    assert expanded["_agt_inferred"]["identity"]["approver"]["confidence"] == 0.6

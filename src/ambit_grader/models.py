@@ -57,7 +57,26 @@ class Sufficiency(StrEnum):
 
 
 class UnfillableReason(StrEnum):
-    """The architectural reasons DEMM §3.5 requires on an unfillable verdict."""
+    """The architectural reasons DEMM §3.5 requires on an unfillable verdict.
+
+    The full vocabulary is exported because a reader of this tool's JSON needs
+    the value space, but only two are reachable from a static evidence file and
+    that limit is stated rather than hidden:
+
+    * ``EVIDENCE_NEVER_PERSISTED`` — the runtime could have written the field
+      and did not. Determinable: the field is simply absent.
+    * ``CROSS_STACK_BOUNDARY`` — the evidence plausibly exists on the other
+      side of a system boundary this set does not span, which an unresolved
+      escalation implies.
+    * ``STATE_LOST`` — requires knowing something *was* recorded and is now
+      gone. A snapshot cannot show a deletion it never witnessed.
+    * ``NON_COOPERATIVE_STRIPPING`` — requires knowing a party removed the
+      evidence deliberately. That is an inference about intent, and a grader
+      that infers intent from absence is guessing.
+
+    The last two are emitted only by a caller who knows the history; this
+    grader never claims them from a file alone.
+    """
 
     CROSS_STACK_BOUNDARY = "cross_stack_boundary"
     STATE_LOST = "state_lost"

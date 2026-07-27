@@ -113,3 +113,29 @@ def test_denials_alone_leave_nothing_to_attribute():
     verdict = principal_authority(records)
     assert verdict.sufficiency is Sufficiency.STRUCTURALLY_UNFILLABLE
     assert "no permitted actions" in (verdict.detail or "")
+
+
+def test_unresolved_escalation_is_a_cross_stack_boundary_not_a_missing_write():
+    """The reason changes the remedy, so it must be the right reason.
+
+    An escalation implies an approval step happened somewhere. Reporting
+    "evidence never persisted" would send an operator to instrument a field
+    nobody emits; "cross-stack boundary" sends them to join the approval
+    system that already holds it.
+    """
+    from ambit_grader.models import UnfillableReason
+
+    records = [_decision(0, "ESCALATE", "0" * 64, "h1", request_fingerprint="fp-1")]
+    verdict = principal_authority(records)
+    assert verdict.sufficiency is Sufficiency.STRUCTURALLY_UNFILLABLE
+    assert verdict.reason is UnfillableReason.CROSS_STACK_BOUNDARY
+
+
+def test_absent_fields_are_reported_as_never_persisted():
+    """A field the runtime could have written and did not is a different fault."""
+    from ambit_grader import Property, grade_records
+    from ambit_grader.models import UnfillableReason
+
+    graded = grade_records("bare", [_decision(0, "ALLOW", "0" * 64, "h1")])
+    data_touch = graded.verdicts[Property.DATA_TOUCH]
+    assert data_touch.reason is UnfillableReason.EVIDENCE_NEVER_PERSISTED

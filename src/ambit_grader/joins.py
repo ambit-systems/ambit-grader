@@ -282,7 +282,12 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
         return PropertyVerdict(
             Property.PRINCIPAL_AUTHORITY,
             Sufficiency.STRUCTURALLY_UNFILLABLE,
-            reason=UnfillableReason.EVIDENCE_NEVER_PERSISTED,
+            # Not "never persisted": an escalation implies an approval step,
+            # and the approval plausibly exists in a ticketing or IdP system
+            # this evidence set does not span. The distinction changes the
+            # remedy — go and join the other system, rather than start
+            # emitting something nobody emits.
+            reason=UnfillableReason.CROSS_STACK_BOUNDARY,
             recommendation=(
                 f"link the {unresolved} unresolved escalation(s) to an approval record "
                 "carrying a named approver"

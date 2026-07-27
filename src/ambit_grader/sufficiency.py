@@ -66,12 +66,3 @@ def dig(record: dict[str, Any], path: str) -> Any:
             return None
         current = current[segment]
     return current
-
-
-def first_interpretable(record: dict[str, Any], *paths: str) -> Any:
-    """Return the first interpretable value among the given dotted paths."""
-    for path in paths:
-        value = dig(record, path)
-        if interpretable(value):
-            return value
-    return None

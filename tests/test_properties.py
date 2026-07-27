@@ -15,7 +15,7 @@ from ambit_grader.properties import (
     lifecycle_context,
     policy_basis,
 )
-from ambit_grader.sufficiency import dig, first_interpretable, interpretable, is_genesis
+from ambit_grader.sufficiency import dig, interpretable, is_genesis
 
 
 def test_placeholder_digests_are_not_interpretable():
@@ -39,13 +39,11 @@ def test_genesis_marker_is_recognised():
     assert not is_genesis(None)
 
 
-def test_dig_and_first_interpretable():
+def test_dig():
     record = {"a": {"b": {"c": 1}}, "x": "", "y": "real"}
     assert dig(record, "a.b.c") == 1
     assert dig(record, "a.b.missing") is None
     assert dig(record, "a.b.c.d") is None
-    assert first_interpretable(record, "x", "y") == "real"
-    assert first_interpretable(record, "x") is None
 
 
 def test_actor_identity_conflict_is_worse_than_absence():

@@ -25,6 +25,8 @@ dev = [
   "mypy==1.19.1",
   "pytest>=8.0",
   "ruff==0.15.2",
+  "pre-commit>=3.8",
+  "vulture>=2.11",
 ]
 
 [tool.pytest.ini_options]
@@ -57,7 +59,7 @@ docstring-code-format = true
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src"]
+files = ["src", "tests"]
 strict = true
 warn_unused_ignores = true
 warn_return_any = true
@@ -77,3 +79,14 @@ include = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ambit_grader"]
+
+# Tests are the behaviour lock, not public API. They are type-checked for real
+# errors — a `dict | None` indexed without a guard is a test that crashes
+# rather than fails — but annotations are not demanded, matching the ruff
+# per-file-ignores that already waive ANN for tests. Relaxing both in one
+# place keeps the two tools telling the same story.
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+check_untyped_defs = true
+disable_error_code = ["no-untyped-call"]

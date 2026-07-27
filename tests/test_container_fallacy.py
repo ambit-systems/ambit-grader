@@ -14,13 +14,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ambit_grader import Property, Sufficiency, grade_records
+from ambit_grader import Grade, Property, Sufficiency, grade_records
 from ambit_grader.adapters import ambit_receipts
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def _grade(name: str):
+def _grade(name: str) -> Grade:
     path = FIXTURES / name
     return grade_records(name, ambit_receipts.load(path))
 

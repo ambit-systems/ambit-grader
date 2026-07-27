@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from ambit_grader import (
@@ -179,9 +181,9 @@ def test_confidence_is_clamped_to_the_unit_interval():
 def test_completeness_moves_when_attribution_improves():
     """The regression this fix exists for: a real improvement must show."""
 
-    def corpus(attributed: int, delegated: int) -> list[dict]:
-        out = []
-        prev = "0" * 64
+    def corpus(attributed: int, delegated: int) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        prev: str = "0" * 64
         for i in range(attributed + delegated):
             named = i < attributed
             rec = {
@@ -201,7 +203,7 @@ def test_completeness_moves_when_attribution_improves():
                     **({"trust_root_id": "ops-root"} if named else {}),
                 },
             }
-            prev = rec["record_hash"]
+            prev = str(rec["record_hash"])
             out.append(rec)
         return out
 

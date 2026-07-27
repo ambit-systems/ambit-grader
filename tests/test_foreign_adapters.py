@@ -12,9 +12,11 @@ authority, because none of them records on whose authority an action was taken.
 from __future__ import annotations
 
 from ambit_grader import Property, Sufficiency, grade_records
+from typing import Any
+
 from ambit_grader.adapters import foreign
 
-OTEL_SPAN = {
+OTEL_SPAN: dict[str, Any] = {
     "name": "execute_tool refund.issue",
     "startTimeUnixNano": "1785148029563000000",
     "attributes": {
@@ -27,7 +29,7 @@ OTEL_SPAN = {
     },
 }
 
-OPENINFERENCE_SPAN = {
+OPENINFERENCE_SPAN: dict[str, Any] = {
     "name": "ToolCall",
     "start_time": "2026-07-27T09:00:00Z",
     "attributes": {
@@ -39,7 +41,7 @@ OPENINFERENCE_SPAN = {
     },
 }
 
-LANGFUSE_OBSERVATION = {
+LANGFUSE_OBSERVATION: dict[str, Any] = {
     "id": "obs-1",
     "traceId": "trace-9",
     "type": "SPAN",
@@ -51,7 +53,7 @@ LANGFUSE_OBSERVATION = {
     "metadata": {},
 }
 
-LANGSMITH_RUN = {
+LANGSMITH_RUN: dict[str, Any] = {
     "id": "run-1",
     "trace_id": "tr-1",
     "run_type": "tool",
@@ -62,7 +64,7 @@ LANGSMITH_RUN = {
     "extra": {"metadata": {}},
 }
 
-WEAVE_CALL = {
+WEAVE_CALL: dict[str, Any] = {
     "id": "call-1",
     "op_name": "weave:///acme/agent/op/issue_refund",
     "started_at": "2026-07-27T09:03:00Z",
@@ -71,7 +73,7 @@ WEAVE_CALL = {
     "attributes": {},
 }
 
-AGT_DECISION = {
+AGT_DECISION: dict[str, Any] = {
     "agent_id": "agent-ops",
     "policy_id": "pol-42",
     "action": "delete",
@@ -81,7 +83,7 @@ AGT_DECISION = {
     "timestamp": "2026-07-27T09:04:00Z",
 }
 
-ALL_FIXTURES = [
+ALL_FIXTURES: list[tuple[str, dict[str, Any]]] = [
     ("otel_genai", OTEL_SPAN),
     ("openinference", OPENINFERENCE_SPAN),
     ("langfuse", LANGFUSE_OBSERVATION),

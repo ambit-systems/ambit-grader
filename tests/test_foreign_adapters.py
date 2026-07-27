@@ -324,3 +324,96 @@ def test_agt_expansion_separates_observed_from_inferred():
     assert "_agt_inferred" in expanded
     assert "_agt_observed" not in expanded
     assert expanded["_agt_inferred"]["identity"]["approver"]["confidence"] == 0.6
+
+
+AGT_BOM_AS_SHIPPED: dict[str, Any] = {
+    "decision_id": "d-4",
+    "timestamp": "2026-07-28T09:00:00Z",
+    "agent_id": "agent-ops",
+    "action_requested": "storage.delete",
+    "outcome": "allow",
+    "fields": [
+        # Required field, un-inferred — real policy-evaluation content.
+        {
+            "name": "policy_rules_evaluated",
+            "category": "policy",
+            "value": ["deny_public_write", "require_review"],
+            "source": "policy",
+            "confidence": 1.0,
+            "inferred": False,
+        },
+        # Optional field, and AGT sets inferred=True on it (decision_bom.py:580).
+        {
+            "name": "delegation_chain",
+            "category": "lineage",
+            "value": ["did:agent:planner", "did:agent:ops"],
+            "source": "audit",
+            "confidence": 1.0,
+            "inferred": True,
+        },
+    ],
+}
+
+
+def test_agt_required_policy_field_fills_policy_basis():
+    """`policy_rules_evaluated` is required and un-inferred — read it."""
+    from ambit_grader.adapters.normalise import normalise_record
+
+    mapped = normalise_record(AGT_BOM_AS_SHIPPED)
+    assert mapped is not None
+    # The rule half of policy basis, not a policy identity.
+    assert mapped["matched_rule_id"] == ["deny_public_write", "require_review"]
+    assert "policy_hash" not in mapped
+
+    graded = grade_records("agt", [AGT_BOM_AS_SHIPPED])
+    assert graded.verdicts[Property.POLICY_BASIS].sufficiency is not (
+        Sufficiency.STRUCTURALLY_UNFILLABLE
+    )
+
+
+def test_agt_delegation_chain_as_shipped_is_not_credited():
+    """AGT marks its own delegation_chain inferred, so it is not evidence.
+
+    The chain is reconstructed from multiple agent DIDs appearing in audit
+    entries — AGT saying it worked out who delegated to whom, not that it
+    witnessed a delegation. Crediting it would accept a competitor's
+    reconstruction as our observation.
+    """
+    from ambit_grader.adapters.normalise import normalise_record
+
+    mapped = normalise_record(AGT_BOM_AS_SHIPPED)
+    assert mapped is not None
+    assert "delegation" not in mapped
+
+    graded = grade_records("agt", [AGT_BOM_AS_SHIPPED])
+    # The action is policy-permitted, so authority is capped rather than named.
+    detail = graded.verdicts[Property.PRINCIPAL_AUTHORITY].detail or ""
+    assert "0 under a delegation whose issuer is not evidenced" in detail
+    assert "1 policy-permitted only" in detail
+
+
+def test_an_observed_delegation_chain_would_be_read_as_issuerless():
+    """If AGT ever emits an observed chain, the ordinary rule applies.
+
+    Every entry is an agent DID — a subject. None is an issuer, which is the
+    same shape Ambit's own delegation envelope had before it carried a trust
+    root. So it caps at partial, exactly as our own HMAC delegations do.
+    """
+    observed_chain = {
+        **AGT_BOM_AS_SHIPPED,
+        "decision_id": "d-5",
+        "fields": [
+            {
+                "name": "delegation_chain",
+                "category": "lineage",
+                "value": ["did:agent:planner", "did:agent:ops"],
+                "source": "audit",
+                "confidence": 1.0,
+                "inferred": False,
+            },
+        ],
+    }
+    graded = grade_records("agt-observed-chain", [observed_chain])
+    verdict = graded.verdicts[Property.PRINCIPAL_AUTHORITY]
+    assert verdict.sufficiency is Sufficiency.PARTIALLY_FILLABLE
+    assert "1 under a delegation whose issuer is not evidenced" in (verdict.detail or "")

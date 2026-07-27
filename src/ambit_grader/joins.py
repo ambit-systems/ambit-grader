@@ -201,8 +201,15 @@ def _policy_attested(record: dict[str, Any], attestations: dict[Any, dict[str, A
     """True if the policy that permitted this action names an approver."""
     for path in ("policy_hash", "evidence.hashes.policy_hash"):
         value = dig(record, path)
-        if interpretable(value) and value in attestations:
-            return True
+        if not interpretable(value):
+            continue
+        try:
+            if value in attestations:
+                return True
+        except TypeError:
+            # Unhashable: a foreign format put a list or dict where a scalar
+            # identity was expected. Not a match, and never a crash.
+            continue
     return False
 
 

@@ -128,6 +128,34 @@ def expand_agt_bom_fields(record: dict[str, Any]) -> dict[str, Any]:
         out["_agt_observed"] = observed
     if inferred:
         out["_agt_inferred"] = inferred
+
+    # AGT's nearest authority artifact is a lineage-category `delegation_chain`
+    # of agent DIDs. Every entry is a *subject* — which agent delegated to
+    # which — and none is an issuer, the same shape Ambit's own delegation
+    # envelope had before it recorded a trust root. Two teams arrived at
+    # delegation-as-authority-artifact independently and both recorded the
+    # delegate rather than the grantor.
+    #
+    # Mapped to a delegation envelope so the ordinary rule applies unchanged:
+    # a live delegation whose issuer is not evidenced caps at partial. No
+    # special-casing, and the same verdict we give our own HMAC delegations.
+    #
+    # Only when AGT marks it observed. As shipped, AGT sets inferred=True on
+    # this field, so on real AGT output this never fires — its own flag says
+    # the chain was reconstructed from audit entries rather than witnessed,
+    # and a reconstruction is not evidence that anyone delegated.
+    chain_field = observed.get("lineage", {}).get("delegation_chain")
+    if isinstance(chain_field, dict):
+        chain = chain_field.get("value")
+        if isinstance(chain, list) and chain:
+            out["delegation"] = {
+                **(out.get("delegation") or {}),
+                "id": str(chain[0]),
+                "jti": str(chain[0]),
+                "kind": "agt_delegation_chain",
+                "subject": str(chain[-1]),
+                "valid": True,
+            }
     return out
 
 
@@ -157,6 +185,7 @@ class Profile:
     timestamp: tuple[str, ...] = ()
     verdict: tuple[str, ...] = ()
     policy: tuple[str, ...] = ()
+    rule: tuple[str, ...] = ()
     approver: tuple[str, ...] = ()
     expand: Callable[[dict[str, Any]], dict[str, Any]] | None = None
     """Optional pre-pass for formats that nest evidence in a list."""
@@ -202,6 +231,10 @@ class Profile:
         policy = _first(record, *self.policy)
         if policy is not None:
             out["policy_hash"] = policy
+
+        rule = _first(record, *self.rule)
+        if rule is not None:
+            out["matched_rule_id"] = rule
 
         approver = _first(record, *self.approver)
         if approver is not None:
@@ -319,6 +352,11 @@ MS_AGT = Profile(
         "_agt_observed.policy.policy_version.value",
         "_agt_observed.policy.policy_name.value",
     ),
+    # `policy_rules_evaluated` is one of AGT's five REQUIRED fields, emitted
+    # un-inferred. It is a *list of rule names* — the rule half of policy
+    # basis, not a policy identity — and is the strongest property any of the
+    # six foreign formats fills.
+    rule=("_agt_observed.policy.policy_rules_evaluated.value",),
     approver=(
         # Observed identity-category BOM entries only. An inferred approver is
         # AGT's reconstruction, not a record that anyone approved.

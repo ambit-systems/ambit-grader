@@ -1,0 +1,78 @@
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = ["hatchling>=1.24.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ambit-grader"
+version = "0.1.0"
+description = "Grades what execution evidence can and cannot prove about who authorised an action"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+# Deliberately zero runtime dependencies. The grader is a trust object: its
+# supply-chain surface is the standard library and nothing else. Adding a
+# runtime dependency is a doctrine-level change, not a convenience.
+dependencies = []
+
+[project.scripts]
+ambit-grade = "ambit_grader.cli:main"
+
+[project.optional-dependencies]
+dev = [
+  "mypy==1.19.1",
+  "pytest>=8.0",
+  "ruff==0.15.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+  "E", "W", "F", "I", "N", "UP", "B", "C4", "SIM", "PTH", "RUF", "D", "ANN",
+]
+ignore = [
+  "B008", "ANN401", "D105", "D107",
+  "N818",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "ANN", "S101", "C408", "PTH", "RUF043", "RUF059", "N801"]
+"**/__init__.py" = ["D104"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+strict = true
+warn_unused_ignores = true
+warn_return_any = true
+warn_redundant_casts = true
+strict_equality = true
+no_implicit_optional = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disable_error_code = ["import-untyped"]
+
+[tool.hatch.build]
+include = [
+  "src/ambit_grader/**",
+  "README.md",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ambit_grader"]

@@ -1,0 +1,23 @@
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --extra dev
+      - name: Lint (ruff)
+        run: uv run ruff check .
+      - name: Format check (ruff)
+        run: uv run ruff format --check src tests
+      - name: File size budget
+        run: uv run python scripts/check_file_size.py
+      - name: Type check (mypy --strict)
+        run: uv run mypy
+      - name: Run tests
+        run: uv run pytest -q

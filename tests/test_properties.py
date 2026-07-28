@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd.
-# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
+# Proprietary and confidential. See LICENSE for terms.
 
 """Tests for the per-record property checks and value predicates."""
 

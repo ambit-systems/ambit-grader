@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd.
-# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
+# Proprietary and confidential. See LICENSE for terms.
 
 [build-system]
 requires = ["hatchling>=1.24.0"]
@@ -11,7 +11,6 @@ version = "0.1.0"
 description = "Grades what execution evidence can and cannot prove about who authorised an action"
 readme = "README.md"
 requires-python = ">=3.12"
-license = "Apache-2.0"
 # Deliberately zero runtime dependencies. The grader is a trust object: its
 # supply-chain surface is the standard library and nothing else. Adding a
 # runtime dependency is a doctrine-level change, not a convenience.
@@ -71,6 +70,12 @@ disallow_incomplete_defs = true
 check_untyped_defs = true
 disable_error_code = ["import-untyped"]
 
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+check_untyped_defs = true
+disable_error_code = ["no-untyped-call"]
+
 [tool.hatch.build]
 include = [
   "src/ambit_grader/**",
@@ -85,8 +90,3 @@ packages = ["src/ambit_grader"]
 # rather than fails — but annotations are not demanded, matching the ruff
 # per-file-ignores that already waive ANN for tests. Relaxing both in one
 # place keeps the two tools telling the same story.
-[[tool.mypy.overrides]]
-module = ["tests.*"]
-disallow_untyped_defs = false
-check_untyped_defs = true
-disable_error_code = ["no-untyped-call"]

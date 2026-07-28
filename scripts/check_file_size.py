@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd.
-# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
+# Proprietary and confidential. See LICENSE for terms.
 
 """Check Python file-size budgets for maintainability."""
 

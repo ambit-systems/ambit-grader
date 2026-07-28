@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd.
-# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
+# Proprietary and confidential. See LICENSE for terms.
 
 """Core types for evidence grading.
 

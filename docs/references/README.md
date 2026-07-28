@@ -1,6 +1,6 @@
 # References
 
-Third-party source material this implementation is verified against. These are **not** Ambit works, and the repository's Apache-2.0 licence does not extend to them — each remains under its own terms. They are retained here so the implementation can be checked against normative text offline, without a network round trip.
+Third-party source material this implementation is verified against. These are **not** Ambit works, and the repository's proprietary licence does not extend to them — each remains under its own terms. They are retained here so the implementation can be checked against normative text offline, without a network round trip.
 
 ## `arXiv-2605.04093-decision-evidence-maturity-model.pdf`
 

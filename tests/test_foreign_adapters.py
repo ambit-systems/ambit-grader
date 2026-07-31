@@ -195,6 +195,134 @@ def test_operator_supplied_metadata_is_read_where_it_exists():
     )
 
 
+def test_langfuse_bare_approver_does_not_bind_principal_authority():
+    """The diagnosed bug, pinned exactly as reported.
+
+    Before the fix, `Profile.apply()` hardcoded `fingerprint_bound: True` on
+    every approver it found, so this record — an ALLOW with nothing but a
+    bare `metadata.approver` — graded `fully_fillable`. A name in a metadata
+    blob is not evidence that anyone authorised this specific action, and
+    must not resolve as bound principal authority.
+    """
+    record = {
+        "traceId": "t1",
+        "type": "TOOL",
+        "name": "pay",
+        "decision": "ALLOW",
+        "metadata": {"approver": "alice"},
+    }
+    graded = grade_records("langfuse-bare-approver", [record])
+    assert (
+        graded.verdicts[Property.PRINCIPAL_AUTHORITY].sufficiency
+        is Sufficiency.STRUCTURALLY_UNFILLABLE
+    )
+
+
+def test_langsmith_approved_by_alone_does_not_bind_principal_authority():
+    """Same bug, different field name: LangSmith spells it `approved_by`."""
+    record = {
+        "id": "run-9",
+        "trace_id": "tr-9",
+        "run_type": "tool",
+        "name": "send_wire",
+        "start_time": "2026-07-27T09:10:00Z",
+        "decision": "ALLOW",
+        "extra": {"metadata": {"approved_by": "bob"}},
+    }
+    graded = grade_records("langsmith-bare-approved-by", [record])
+    assert (
+        graded.verdicts[Property.PRINCIPAL_AUTHORITY].sufficiency
+        is Sufficiency.STRUCTURALLY_UNFILLABLE
+    )
+
+
+def test_agt_observed_approver_alone_does_not_bind_principal_authority():
+    """An AGT `identity.approver` field, with no policy field alongside it.
+
+    `test_agt_with_an_observed_approver_can_name_a_principal` below still
+    grades better than unfillable after this fix, but only because that
+    fixture also carries an observed `policy_id` — a second, independent
+    route to partial credit. Stripped to just the approver, the record must
+    fall all the way to unfillable: naming someone is not binding them.
+    """
+    bare_approver = {
+        "decision_id": "d-bare-approver",
+        "timestamp": "2026-07-28T09:00:00Z",
+        "agent_id": "agent-ops",
+        "action_requested": "storage.delete",
+        "outcome": "allow",
+        "fields": [
+            {
+                "name": "approver",
+                "category": "identity",
+                "value": "ops-lead@example",
+                "source": "audit_source",
+                "confidence": 1.0,
+                "inferred": False,
+            },
+        ],
+    }
+    graded = grade_records("agt-bare-approver", [bare_approver])
+    assert (
+        graded.verdicts[Property.PRINCIPAL_AUTHORITY].sufficiency
+        is Sufficiency.STRUCTURALLY_UNFILLABLE
+    )
+
+
+def test_approval_binding_gates_fingerprint_bound_not_approver_presence():
+    """The extensibility mechanism: only a declared binding path can set it.
+
+    A synthetic profile with an `approval_binding` path proves the field is
+    load-bearing — naming an approver is not enough; the binding path itself
+    must resolve to something interpretable before `fingerprint_bound` may
+    be True. A profile with no `approval_binding` path can never set it,
+    regardless of what the record contains.
+    """
+    bound_profile = foreign.Profile(
+        name="synthetic-bound",
+        detect=lambda r: True,
+        approver=("approver",),
+        approval_binding=("request_fingerprint",),
+    )
+    unbound_profile = foreign.Profile(
+        name="synthetic-unbound", detect=lambda r: True, approver=("approver",)
+    )
+
+    named_and_bound = {"approver": "alice", "request_fingerprint": "fp-1"}
+    named_only = {"approver": "alice"}
+
+    assert bound_profile.apply(named_and_bound)["approval"]["fingerprint_bound"] is True
+    assert bound_profile.apply(named_only)["approval"]["fingerprint_bound"] is False
+    assert unbound_profile.apply(named_and_bound)["approval"]["fingerprint_bound"] is False
+
+
+def test_no_foreign_profile_declares_an_approval_binding_path():
+    """The absence is the product finding, pinned so it cannot regress silently.
+
+    None of the six shipped formats records anything that ties a named
+    approver to the specific request it approves, so none may declare an
+    `approval_binding` path. If one starts to, this test should be updated
+    deliberately, alongside the format's own binding-path fixture.
+    """
+    for profile in foreign.PROFILES:
+        assert profile.approval_binding == (), profile.name
+
+
+def test_no_foreign_profile_can_populate_a_top_level_fingerprint_bound():
+    """Guards the first branch of `_approval_envelope_resolves`.
+
+    That branch is reserved for Ambit's own native receipts, which
+    precompute the join at the top level. `Profile.apply()` must never write
+    a top-level `fingerprint_bound` — only the nested `approval` envelope —
+    or a foreign record could counterfeit the native fast path.
+    """
+    for _name, record in ALL_FIXTURES:
+        profile = foreign.match(record)
+        assert profile is not None
+        mapped = profile.apply(record)
+        assert mapped.get("fingerprint_bound") is not True
+
+
 def test_profiles_never_invent_absent_fields():
     """A field absent from the source must stay absent after mapping."""
     sparse = {"attributes": {"gen_ai.operation.name": "chat"}}
@@ -284,17 +412,27 @@ def test_agt_bom_is_detected_and_its_nested_fields_are_read():
 
 
 def test_agt_with_an_observed_approver_can_name_a_principal():
-    """If AGT's evidence really names an approver, the grader must say so.
+    """AGT's evidence is read, but naming an approver alone earns nothing.
 
-    Refusing to read it would be the grader wrong in its own favour, pointed
-    at a competitor's evidence — and it would make the headline finding a
-    false negative rather than a finding.
+    CORRECTED: this test previously asserted only "not
+    structurally_unfillable", which the pre-fix adapter satisfied by wrongly
+    crediting the bare observed approver as a bound principal
+    (`fully_fillable`, via a hardcoded `fingerprint_bound: True` — see
+    `foreign.py`). AGT never carries binding evidence for any approver it
+    names (`MS_AGT.approval_binding` is empty, like every shipped profile),
+    so an unbound name earns no more than `partially_fillable` — and this
+    fixture reaches even that only because it also carries an observed
+    `policy_id`, a second and independent route to partial credit. See
+    `test_agt_observed_approver_alone_does_not_bind_principal_authority` for
+    the same approver with no policy alongside it, which is unfillable. The
+    old loose assertion passed for the wrong reason and would not have
+    caught the bug it was named for; it is tightened here to the specific
+    verdict and the specific reason.
     """
     graded = grade_records("agt-observed", [AGT_BOM_WITH_OBSERVED_APPROVER])
-    assert (
-        graded.verdicts[Property.PRINCIPAL_AUTHORITY].sufficiency
-        is not Sufficiency.STRUCTURALLY_UNFILLABLE
-    )
+    verdict = graded.verdicts[Property.PRINCIPAL_AUTHORITY]
+    assert verdict.sufficiency is Sufficiency.PARTIALLY_FILLABLE
+    assert "1 policy-permitted only" in (verdict.detail or "")
 
 
 def test_agt_inferred_approver_is_never_credited_as_a_principal():
@@ -417,3 +555,38 @@ def test_an_observed_delegation_chain_would_be_read_as_issuerless():
     verdict = graded.verdicts[Property.PRINCIPAL_AUTHORITY]
     assert verdict.sufficiency is Sufficiency.PARTIALLY_FILLABLE
     assert "1 under a delegation whose issuer is not evidenced" in (verdict.detail or "")
+
+
+def test_agt_chain_expansion_does_not_claim_a_validity_the_source_never_gave():
+    """AGT's delegation_chain carries no validity signal, so we must not add one.
+
+    The chain is a list of agent DIDs. Nothing in it states that the delegation
+    was valid, accepted, or unrevoked — AGT has no field that says so. Writing
+    ``valid: True`` while expanding it is the adapter asserting a fact the
+    source never gave: the same defect that let a bare approver name read as a
+    bound approval, in the same file.
+
+    It is inert today, because :func:`joins._delegation_is_live` tests
+    ``valid is not False`` and so treats an absent key and ``True`` alike. That
+    is precisely why it is worth closing now: the moment that check is tightened
+    to ``is True`` — mirroring the tightening principal authority just received
+    — a synthesised ``True`` would start granting credit no evidence supports.
+    """
+    expanded = foreign.expand_agt_bom_fields(
+        {
+            "decision_id": "d-9",
+            "fields": [
+                {
+                    "name": "delegation_chain",
+                    "category": "lineage",
+                    "value": ["did:agent:planner", "did:agent:ops"],
+                    "source": "audit",
+                    "confidence": 1.0,
+                    "inferred": False,
+                },
+            ],
+        }
+    )
+    delegation = expanded["delegation"]
+    assert delegation["kind"] == "agt_delegation_chain"
+    assert "valid" not in delegation

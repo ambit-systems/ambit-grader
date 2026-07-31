@@ -165,3 +165,79 @@ def test_some_unaccounted_stays_partial():
     )
     bare = _decision(1, "ALLOW", "h1", "h2")
     assert principal_authority([attributed, bare]).sufficiency is (Sufficiency.PARTIALLY_FILLABLE)
+
+
+def test_genuine_bound_approval_still_resolves_after_the_foreign_adapter_fix():
+    """Guard against over-correction on Ambit's own native path.
+
+    The foreign-adapter fix stops `fingerprint_bound` from being fabricated
+    on formats with no binding evidence. Native records never pass through
+    that adapter, and a genuinely bound approval — the engine's own resolved
+    join — must still fully resolve exactly as before.
+    """
+    records = [
+        _decision(
+            0,
+            "ESCALATE",
+            "0" * 64,
+            "h1",
+            approval={"approver": "approver-alpha", "fingerprint_bound": True, "valid": True},
+        )
+    ]
+    assert principal_authority(records).sufficiency is Sufficiency.FULLY_FILLABLE
+
+
+def test_named_but_unbound_approver_is_distinguished_from_no_approver_at_all():
+    """The second-cycle fix: two different gaps must not read as one.
+
+    "No approver anywhere" and "an approver is named but nothing binds it to
+    this action" are different findings with different remedies — collect a
+    first approval versus bind the one already there. Before this fix both
+    collapsed into the same generic "no authority evidence at all" bucket.
+    """
+    bare = _decision(0, "ALLOW", "0" * 64, "h1")
+    named_unbound = _decision(
+        1, "ALLOW", "h1", "h2", approval={"approver": "alice", "fingerprint_bound": False}
+    )
+
+    bare_verdict = principal_authority([bare])
+    unbound_verdict = principal_authority([named_unbound])
+
+    # Same Sufficiency semantics either way: an unbound name earns no more
+    # credit than no name at all. DEMM's partial category means recoverable
+    # evidence plus a gap description, and an unbound name is not recoverable
+    # evidence, so no partial credit is invented for it.
+    assert bare_verdict.sufficiency is Sufficiency.STRUCTURALLY_UNFILLABLE
+    assert unbound_verdict.sufficiency is Sufficiency.STRUCTURALLY_UNFILLABLE
+
+    assert "0 naming an approver not bound to this action" in (bare_verdict.detail or "")
+    assert "1 with no authority evidence at all" in (bare_verdict.detail or "")
+
+    assert "1 naming an approver not bound to this action" in (unbound_verdict.detail or "")
+    assert "0 with no authority evidence at all" in (unbound_verdict.detail or "")
+
+
+def test_unbound_approver_recommendation_says_bind_not_add():
+    """The recommendation must point at the join, not at collecting a name.
+
+    Recommending "add an approver" for a record that already names one would
+    send an operator to gather evidence that is already sitting in the file.
+    What is actually missing is the link from that name to this request.
+    """
+    named_unbound = _decision(
+        0, "ALLOW", "0" * 64, "h1", approval={"approver": "alice", "fingerprint_bound": False}
+    )
+    recommendation = principal_authority([named_unbound]).recommendation or ""
+    assert "bind" in recommendation
+    assert "add an approver" not in recommendation.lower()
+
+
+def test_mixed_bare_and_named_unbound_are_both_named_in_the_detail():
+    """A corpus can carry both gaps at once; the counts must not merge."""
+    bare = _decision(0, "ALLOW", "0" * 64, "h1")
+    named_unbound = _decision(
+        1, "ALLOW", "h1", "h2", approval={"approver": "alice", "fingerprint_bound": False}
+    )
+    detail = principal_authority([bare, named_unbound]).detail or ""
+    assert "1 naming an approver not bound to this action" in detail
+    assert "1 with no authority evidence at all" in detail

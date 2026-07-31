@@ -144,6 +144,11 @@ def expand_agt_bom_fields(record: dict[str, Any]) -> dict[str, Any]:
     # this field, so on real AGT output this never fires — its own flag says
     # the chain was reconstructed from audit entries rather than witnessed,
     # and a reconstruction is not evidence that anyone delegated.
+    #
+    # No `valid` key: the chain says who delegated to whom and nothing about
+    # whether that delegation holds. Asserting validity here would be the
+    # adapter inventing a fact, so the envelope stays silent and
+    # `_delegation_is_live`'s `is not False` reads the silence as it should.
     chain_field = observed.get("lineage", {}).get("delegation_chain")
     if isinstance(chain_field, dict):
         chain = chain_field.get("value")
@@ -154,7 +159,6 @@ def expand_agt_bom_fields(record: dict[str, Any]) -> dict[str, Any]:
                 "jti": str(chain[0]),
                 "kind": "agt_delegation_chain",
                 "subject": str(chain[-1]),
-                "valid": True,
             }
     return out
 
@@ -174,6 +178,10 @@ class Profile:
         verdict: Dotted paths that may hold a governance verdict.
         policy: Dotted paths that may hold a policy identity.
         approver: Dotted paths that may name an approving principal.
+        approval_binding: Dotted paths that would carry evidence tying a named
+            approver to *this* request — a request fingerprint, action hash,
+            or equivalent the approval itself references. Naming an approver
+            is not binding one; this is what makes the difference checkable.
     """
 
     name: str
@@ -187,6 +195,13 @@ class Profile:
     policy: tuple[str, ...] = ()
     rule: tuple[str, ...] = ()
     approver: tuple[str, ...] = ()
+    approval_binding: tuple[str, ...] = ()
+    """Dotted paths naming a request fingerprint or action hash the approval
+    itself references. None of the six profiles below declares one: no
+    mainstream trace format records the join between an approver and the
+    request it approves, so a name alone never sets ``fingerprint_bound``.
+    That absence is itself the product finding, not an oversight — see the
+    module docstring."""
     expand: Callable[[dict[str, Any]], dict[str, Any]] | None = None
     """Optional pre-pass for formats that nest evidence in a list."""
 
@@ -238,10 +253,19 @@ class Profile:
 
         approver = _first(record, *self.approver)
         if approver is not None:
+            # A name is a real observation and is always recorded. Binding it
+            # is a separate claim: fingerprint_bound is True only when the
+            # source itself carries evidence tying THIS approval to THIS
+            # request, via one of the profile's declared approval_binding
+            # paths — never merely because a name was found. No profile below
+            # declares one, so on all six shipped formats this is always
+            # False. A name in a metadata blob is not proof anyone authorised
+            # the specific action being graded.
+            bound = _first(record, *self.approval_binding) is not None
             out["approval"] = {
                 **(out.get("approval") or {}),
                 "approver": approver,
-                "fingerprint_bound": True,
+                "fingerprint_bound": bound,
             }
 
         return out
@@ -291,6 +315,8 @@ LANGFUSE = Profile(
     timestamp=("startTime", "timestamp"),
     policy=("metadata.policy_hash", "metadata.policy"),
     approver=("metadata.approver", "metadata.approved_by"),
+    # No approval_binding: Langfuse's metadata is a free-form bag with no
+    # convention for referencing the request an approval covers.
 )
 
 #: LangSmith run export.
@@ -304,6 +330,8 @@ LANGSMITH = Profile(
     timestamp=("start_time", "start_timestamp"),
     policy=("extra.metadata.policy_hash",),
     approver=("extra.metadata.approver", "extra.metadata.approved_by"),
+    # No approval_binding: LangSmith's run metadata has no field referencing
+    # the run an approval was meant to cover.
 )
 
 #: Weights & Biases Weave call export.
@@ -317,6 +345,8 @@ WEAVE = Profile(
     timestamp=("started_at", "start_time"),
     policy=("attributes.policy_hash",),
     approver=("attributes.approver",),
+    # No approval_binding: Weave's call attributes carry no reference from an
+    # approver back to the call it approves.
 )
 
 #: Microsoft Agent Governance Toolkit decision records. The only widely-used
@@ -365,6 +395,10 @@ MS_AGT = Profile(
         "_agt_observed.identity.reviewer.value",
         "_agt_observed.identity.principal.value",
     ),
+    # No approval_binding: none of AGT's identity-category fields references
+    # a request fingerprint or action hash back to the decision they name an
+    # approver for — the BOM records who, never a link from who to which
+    # specific request.
 )
 
 #: Ordered by detection specificity: the governance format first, then the

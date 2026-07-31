@@ -115,6 +115,49 @@ def _approval_envelope_resolves(record: dict[str, Any]) -> bool:
     )
 
 
+def _approver_named(record: dict[str, Any]) -> bool:
+    """Return True if the record's own evidence names an approver anywhere.
+
+    Checked independently of whether the name is bound to this request — an
+    unbound name is still worth reporting in the detail, just not worth
+    crediting in the count. Mirrors the two places
+    :func:`_approval_envelope_resolves` reads an approver from, without its
+    binding condition, so it can tell "no name" apart from "name, not bound"
+    for records that function ends up rejecting.
+    """
+    return interpretable(record.get("approver")) or interpretable(dig(record, "approval.approver"))
+
+
+def _authority_gap_recommendation(bare_unaccounted: int, named_unbound: int, noun: str) -> str:
+    """Recommend the fix for permitted actions with no resolved principal.
+
+    Two different gaps need two different remedies, and conflating them sends
+    an operator to do the wrong thing. Silence needs a first authority
+    artifact — a policy identity, delegation or approval, any of which beats
+    nothing. A named-but-unbound approver already has the hard part done;
+    recommending "add an approver" there would ask for evidence that is
+    already sitting in the record. What is missing is the join, so the fix is
+    to bind the name that exists to the request it covers, never to collect
+    another one.
+    """
+    if named_unbound and bare_unaccounted:
+        return (
+            f"bind the {named_unbound} named-but-unbound approval(s) to the request they "
+            f"authorise, and give the {bare_unaccounted} {noun} naming no approver at all a "
+            "first authority basis — a policy identity, delegation or approval"
+        )
+    if named_unbound:
+        return (
+            f"bind the {named_unbound} named approval(s) to the request they authorise — a "
+            "request fingerprint or action hash the approval itself references; the "
+            "approver is already named, so naming another one changes nothing"
+        )
+    return (
+        f"give the {bare_unaccounted} {noun} an authority basis — a policy identity at "
+        "minimum, a delegation or approval where consequential"
+    )
+
+
 def _delegation_is_live(record: dict[str, Any]) -> bool:
     """Return True if the record carries a valid, unrevoked delegation envelope.
 
@@ -233,6 +276,14 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
     within a rule — not that any principal took responsibility for it. That
     gap between can and should is the property's whole point, so a corpus of
     policy-permitted allows is capped at partial no matter how clean it is.
+
+    A permitted action that names an approver but cannot bind that name to
+    this specific request is graded identically to one with no approver at
+    all — DEMM's partial category means recoverable evidence plus a gap, and
+    an unbound name is not recoverable evidence, so it earns no extra credit.
+    The two are still reported separately in ``detail`` and
+    ``recommendation``, because the remedy differs: bind the name that is
+    already there, rather than go looking for a first one.
     """
     approvals = _approval_index(records)
     attestations = _attestation_index(records)
@@ -249,7 +300,7 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
             detail=f"no permitted actions ({denied} denial(s) excluded)",
         )
 
-    attributed = delegated = unresolved = policy_only = unaccounted = 0
+    attributed = delegated = unresolved = policy_only = unaccounted = named_unbound = 0
     for record in permitted:
         if _authority_resolved(record, approvals):
             attributed += 1
@@ -270,6 +321,14 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
             # Counting it nowhere would let it vanish from the denominator and
             # let a corpus report full attribution while carrying bare allows.
             unaccounted += 1
+            if _approver_named(record):
+                # A name is present but did not resolve — _authority_resolved
+                # already ruled out a bound one above. Tracked separately so
+                # the report can tell "nobody named" apart from "named, not
+                # bound": different gaps, different remedies, collapsed into
+                # one bucket before this counter existed.
+                named_unbound += 1
+    bare_unaccounted = unaccounted - named_unbound
 
     # §3.5 confidence: the share of permitted actions whose principal is
     # actually named. A delegation without an evidenced issuer counts half —
@@ -281,7 +340,8 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
         f"{len(permitted)} permitted action(s): {attributed} attributable to a named "
         f"principal, {delegated} under a delegation whose issuer is not evidenced, "
         f"{policy_only} policy-permitted only, {unresolved} escalated without a resolving "
-        f"approval, {unaccounted} with no authority evidence at all "
+        f"approval, {named_unbound} naming an approver not bound to this action, "
+        f"{bare_unaccounted} with no authority evidence at all "
         f"({denied} denial(s) excluded)"
     )
 
@@ -305,14 +365,15 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
         # Nothing recoverable at all. `partially_fillable` means recoverable
         # evidence plus a gap description; where every permitted action lacks
         # a principal, a policy and a delegation alike, there is no evidence
-        # to partially recover and reporting one would be generous.
+        # to partially recover and reporting one would be generous. An
+        # unbound name is no more recoverable than no name — see
+        # _authority_gap_recommendation for why the remedy still differs.
         return PropertyVerdict(
             Property.PRINCIPAL_AUTHORITY,
             Sufficiency.STRUCTURALLY_UNFILLABLE,
             reason=UnfillableReason.EVIDENCE_NEVER_PERSISTED,
-            recommendation=(
-                f"give the {unaccounted} permitted action(s) an authority basis — a policy "
-                "identity at minimum, a delegation or approval where consequential"
+            recommendation=_authority_gap_recommendation(
+                bare_unaccounted, named_unbound, "permitted action(s)"
             ),
             detail=detail,
         )
@@ -321,9 +382,8 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
             Property.PRINCIPAL_AUTHORITY,
             Sufficiency.PARTIALLY_FILLABLE,
             confidence=attributed_share,
-            recommendation=(
-                f"give the {unaccounted} bare allow(s) an authority basis — a policy "
-                "identity at minimum, a delegation or approval where consequential"
+            recommendation=_authority_gap_recommendation(
+                bare_unaccounted, named_unbound, "bare allow(s)"
             ),
             detail=detail,
         )

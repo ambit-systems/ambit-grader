@@ -76,7 +76,9 @@ So a live delegation without an evidenced issuer is a **distinct third class**, 
 | Delegation, issuer not evidenced | capped at `partially_fillable` |
 | Policy-permitted only | capped at `partially_fillable` |
 | Escalated, no resolving approval | `structurally_unfillable` |
-| Permitted with no authority evidence at all | capped at `partially_fillable`, named in the detail |
+| Permitted with no authority evidence at all — including a named approver that cannot be bound to this action | capped at `partially_fillable`; the two are still named separately in the detail, because the remedy differs |
+
+Naming an approver is not binding one. An adapter only sets `fingerprint_bound` when the source record itself carries evidence tying that approver to *this* request — a request fingerprint or action hash the approval references — never merely because a name was found. None of the six foreign formats this tool reads carries that evidence, so a foreign approver is always recorded but never counted as bound; a `metadata.approver` on a Langfuse span, for instance, is real evidence someone was *named*, not evidence they authorised the specific action being graded.
 
 Treating envelope presence as principal identification would be the container fallacy one level up, committed in the vendor's own favour — the single bias an independence argument cannot survive.
 

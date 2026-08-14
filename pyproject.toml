@@ -11,6 +11,9 @@ version = "0.1.0"
 description = "Grades what execution evidence can and cannot prove about who authorised an action"
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [{ name = "Ambit Systems" }]
+license = { text = "Proprietary" }
+classifiers = ["License :: Other/Proprietary License"]
 # Deliberately zero runtime dependencies. The grader is a trust object: its
 # supply-chain surface is the standard library and nothing else. Adding a
 # runtime dependency is a doctrine-level change, not a convenience.

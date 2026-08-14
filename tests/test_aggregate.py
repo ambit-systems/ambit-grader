@@ -20,6 +20,7 @@ from ambit_grader import (
     completeness,
     grade_records,
 )
+from ambit_grader.aggregate import partial_confidence
 from ambit_grader.models import PropertyVerdict
 
 
@@ -163,6 +164,32 @@ def test_partial_confidence_is_not_a_flat_default(tmp_path):
     # Confidence is meaningless for the fixed-weight categories.
     fixed = PropertyVerdict(Property.DATA_TOUCH, Sufficiency.FULLY_FILLABLE, confidence=0.1)
     assert fixed.weight == 1.0
+
+
+class TestPartialConfidence:
+    """Direct coverage for `partial_confidence`, the §3.5 confidence formula."""
+
+    def test_empty_list_returns_zero(self):
+        assert partial_confidence([]) == 0.0
+
+    def test_single_fraction_returns_that_fraction(self):
+        assert partial_confidence([0.4]) == pytest.approx(0.4)
+
+    def test_is_the_mean_across_records(self):
+        # One action of eight, then six of eight: (0.125 + 0.75) / 2.
+        assert partial_confidence([0.125, 0.75]) == pytest.approx(0.4375)
+
+    def test_uniform_fractions_return_that_value_unchanged(self):
+        assert partial_confidence([0.5, 0.5, 0.5]) == pytest.approx(0.5)
+
+    def test_boundary_value_zero(self):
+        assert partial_confidence([0.0, 0.0]) == 0.0
+
+    def test_boundary_value_one(self):
+        assert partial_confidence([1.0, 1.0]) == 1.0
+
+    def test_mixed_boundaries_average_to_the_midpoint(self):
+        assert partial_confidence([0.0, 1.0]) == pytest.approx(0.5)
 
 
 def test_confidence_is_clamped_to_the_unit_interval():

@@ -1,14 +1,13 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """Grade what execution evidence can and cannot prove about who authorised an action.
 
-Public API:
+Public API, the names in ``__all__``:
 
-    from ambit_grader import grade_records, render_text
-    from ambit_grader.adapters import ambit_receipts
+    from ambit_grader import grade_records, load_jsonl, render_text
 
-    records = ambit_receipts.load(Path("receipts.jsonl"))
+    records = load_jsonl("receipts.jsonl")
     grade = grade_records("receipts.jsonl", records)
     print(render_text([grade]))
 
@@ -19,36 +18,31 @@ question tests. No DEMM maturity level is derived — 3.7 levels describe the
 evidence regime, not the contents of a file.
 """
 
-from ambit_grader.aggregate import combine, completeness, grade_records
+from ambit_grader.aggregate import grade_records
+from ambit_grader.jsonl import EvidenceReadError
+from ambit_grader.jsonl import load as load_jsonl
 from ambit_grader.models import (
     AUTHORITY_SPINE,
     IMPLEMENTATION_ROWS,
-    LEVEL_DESCRIPTIONS,
-    ROW_COUNT,
-    WEIGHT,
     Grade,
     Property,
     PropertyVerdict,
     Sufficiency,
     UnfillableReason,
 )
-from ambit_grader.report import headline, render_json, render_text, to_dict
+from ambit_grader.report import render_json, render_text, to_dict
 
 __all__ = [
     "AUTHORITY_SPINE",
     "IMPLEMENTATION_ROWS",
-    "LEVEL_DESCRIPTIONS",
-    "ROW_COUNT",
-    "WEIGHT",
+    "EvidenceReadError",
     "Grade",
     "Property",
     "PropertyVerdict",
     "Sufficiency",
     "UnfillableReason",
-    "combine",
-    "completeness",
     "grade_records",
-    "headline",
+    "load_jsonl",
     "render_json",
     "render_text",
     "to_dict",

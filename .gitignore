@@ -7,8 +7,7 @@ build/
 .pytest_cache/
 .ruff_cache/
 
-# Environments and caches. Absent from the sibling repos' ignore files, where a
-# virtualenv stays out of git only because nobody runs `git add -A`.
+# Environments and caches.
 .venv/
 .uv-cache/
 

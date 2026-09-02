@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """Adapters for third-party agent-trace formats.
 
@@ -92,9 +92,9 @@ def expand_agt_bom_fields(record: dict[str, Any]) -> dict[str, Any]:
     carries an open list of ``BOMField(name, category, value, source,
     confidence, inferred)``, categorised as identity / trust / policy / action
     / context / outcome / lineage. A flat-path lookup cannot see inside that
-    list, so an AGT record could name a principal and we would report the
-    property unfillable — the grader wrong in its own favour, pointed at a
-    competitor's evidence instead of ours.
+    list, so an AGT record could name a principal and the grader would report
+    the property unfillable — the grader wrong in its own favour, pointed at a
+    third-party format's evidence instead of Ambit's.
 
     Two of AGT's own per-field flags are load-bearing and are preserved:
 
@@ -102,8 +102,8 @@ def expand_agt_bom_fields(record: dict[str, Any]) -> dict[str, Any]:
       telling us it worked the value out rather than witnessed it. A
       reconstruction is not evidence that someone approved, so inferred
       fields are expanded under a separate key and never lifted as a
-      principal. Crediting them would be accepting a competitor's inference
-      as our observation.
+      principal. Crediting them would be accepting a third-party format's
+      inference as Ambit's observation.
     * ``confidence`` — carried through, because §3.5's partial weight is a
       confidence and AGT has already computed one.
     """
@@ -138,7 +138,7 @@ def expand_agt_bom_fields(record: dict[str, Any]) -> dict[str, Any]:
     #
     # Mapped to a delegation envelope so the ordinary rule applies unchanged:
     # a live delegation whose issuer is not evidenced caps at partial. No
-    # special-casing, and the same verdict we give our own HMAC delegations.
+    # special-casing, and the same verdict Ambit's own HMAC delegations get.
     #
     # Only when AGT marks it observed. As shipped, AGT sets inferred=True on
     # this field, so on real AGT output this never fires — its own flag says
@@ -153,8 +153,9 @@ def expand_agt_bom_fields(record: dict[str, Any]) -> dict[str, Any]:
     if isinstance(chain_field, dict):
         chain = chain_field.get("value")
         if isinstance(chain, list) and chain:
+            existing_delegation = out.get("delegation")
             out["delegation"] = {
-                **(out.get("delegation") or {}),
+                **(existing_delegation if isinstance(existing_delegation, dict) else {}),
                 "id": str(chain[0]),
                 "jti": str(chain[0]),
                 "kind": "agt_delegation_chain",
@@ -177,11 +178,16 @@ class Profile:
         timestamp: Dotted paths that may hold the event time.
         verdict: Dotted paths that may hold a governance verdict.
         policy: Dotted paths that may hold a policy identity.
+        rule: Dotted paths that may hold the rule identity within a policy.
         approver: Dotted paths that may name an approving principal.
         approval_binding: Dotted paths that would carry evidence tying a named
             approver to *this* request — a request fingerprint, action hash,
             or equivalent the approval itself references. Naming an approver
             is not binding one; this is what makes the difference checkable.
+            None of the six shipped profiles declares one: no mainstream trace
+            format records the join between an approver and the request it
+            approves, so a name alone never sets ``fingerprint_bound``.
+        expand: Optional pre-pass for formats that nest evidence in a list.
     """
 
     name: str
@@ -196,14 +202,7 @@ class Profile:
     rule: tuple[str, ...] = ()
     approver: tuple[str, ...] = ()
     approval_binding: tuple[str, ...] = ()
-    """Dotted paths naming a request fingerprint or action hash the approval
-    itself references. None of the six profiles below declares one: no
-    mainstream trace format records the join between an approver and the
-    request it approves, so a name alone never sets ``fingerprint_bound``.
-    That absence is itself the product finding, not an oversight — see the
-    module docstring."""
     expand: Callable[[dict[str, Any]], dict[str, Any]] | None = None
-    """Optional pre-pass for formats that nest evidence in a list."""
 
     def apply(self, record: dict[str, Any]) -> dict[str, Any]:
         """Map a record onto canonical paths, omitting anything not present."""
@@ -262,8 +261,9 @@ class Profile:
             # False. A name in a metadata blob is not proof anyone authorised
             # the specific action being graded.
             bound = _first(record, *self.approval_binding) is not None
+            existing_approval = out.get("approval")
             out["approval"] = {
-                **(out.get("approval") or {}),
+                **(existing_approval if isinstance(existing_approval, dict) else {}),
                 "approver": approver,
                 "fingerprint_bound": bound,
             }
@@ -349,9 +349,6 @@ WEAVE = Profile(
     # approver back to the call it approves.
 )
 
-#: Microsoft Agent Governance Toolkit decision records. The only widely-used
-#: format that carries a governance verdict — and it still names no principal:
-#: the record says what was decided, not who authorised it.
 #: Microsoft Agent Governance Toolkit — decision records and Decision BOMs.
 #:
 #: The only widely-used foreign format that carries a governance verdict. Its

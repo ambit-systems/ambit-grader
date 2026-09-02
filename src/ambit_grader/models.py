@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """Core types for evidence grading.
 
@@ -10,7 +10,7 @@ Vocabulary follows the Decision Evidence Maturity Model (DEMM, arXiv
   seven implementation rows, faithful to the published formula and comparable
   to any other DEMM implementation. Nothing Ambit authored is inside it.
 * **The Ambit authority verdict** — Ambit's own narrower reading of whether a
-  permitted action can be traced to a principal. Clearly labelled as ours.
+  permitted action can be traced to a principal. Labelled as Ambit's.
 
 What is deliberately *not* computed is a DEMM maturity level. §3.7 defines the
 five levels as descriptions of the evidence **regime** — whether reconstruction
@@ -175,6 +175,10 @@ class PropertyVerdict:
         recommendation: The upstream regime change that would close the gap
             (§3.6). Emitted for partial and unfillable verdicts.
         detail: Human-readable expansion, used by corpus-level checks.
+        confidence: The §3.5 confidence for a partially-fillable verdict, in
+            [0, 1]. ``None`` falls back to :data:`DEFAULT_PARTIAL_CONFIDENCE`.
+            Ignored for every other category, whose weights are fixed by the
+            method.
     """
 
     prop: Property
@@ -183,11 +187,6 @@ class PropertyVerdict:
     recommendation: str | None = None
     detail: str | None = None
     confidence: float | None = None
-    """The §3.5 confidence for a partially-fillable verdict, in [0, 1].
-
-    ``None`` falls back to :data:`DEFAULT_PARTIAL_CONFIDENCE`. Ignored for
-    every other category, whose weights are fixed by the method.
-    """
 
     @property
     def weight(self) -> float:
@@ -205,12 +204,17 @@ class Grade:
 
     Attributes:
         source: Name of the evidence set.
-        record_count: Number of evidence records read.
+        record_count: Number of records that matched a known shape. Excludes
+            ``unrecognised``.
         verdicts: Per-property verdicts over the eight conceptual classes.
         completeness: DEMM §3.5 reconstruction completeness over the seven
             implementation rows, in [0, 1].
         authority: Ambit's own verdict on whether permitted actions can be
             traced to a principal. Not a DEMM output.
+        shapes: What was read, by shape, including anything skipped as
+            unrecognised.
+        unrecognised: Records that parsed as JSON but matched no known
+            evidence shape.
     """
 
     source: str
@@ -219,10 +223,7 @@ class Grade:
     completeness: float = 0.0
     authority: Sufficiency = Sufficiency.STRUCTURALLY_UNFILLABLE
     shapes: str = ""
-    """What was read, by shape, including anything skipped as unrecognised."""
-
     unrecognised: int = 0
-    """Records that parsed as JSON but matched no known evidence shape."""
 
     def row_verdicts(self) -> list[tuple[str, Sufficiency]]:
         """Return the seven implementation rows with their collapsed verdicts.

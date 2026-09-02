@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """The regression suite for the failure this grader exists to avoid.
 
@@ -14,15 +14,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ambit_grader import Grade, Property, Sufficiency, grade_records
-from ambit_grader.adapters import ambit_receipts
+from ambit_grader import Grade, Property, Sufficiency, grade_records, load_jsonl
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _grade(name: str) -> Grade:
     path = FIXTURES / name
-    return grade_records(name, ambit_receipts.load(path))
+    return grade_records(name, load_jsonl(path))
 
 
 def test_complete_looking_records_with_broken_joins_never_score_evidenced():

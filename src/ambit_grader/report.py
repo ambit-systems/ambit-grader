@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """Rendering of grades.
 
@@ -42,7 +42,8 @@ def render_text(grades: list[Grade]) -> str:
         lines.append(f"  {headline(grade)}")
         lines.append("")
 
-    columns = "".join(f"{g.source[: _COLUMN - 1]:>{_COLUMN}}" for g in grades)
+    # The tail of a path is the distinguishing part; keep it.
+    columns = "".join(f"{g.source[-(_COLUMN - 1) :]:>{_COLUMN}}" for g in grades)
     header = f"{'DEMM property class':<{_LABEL}}{columns}"
     lines.append(header)
     lines.append("-" * len(header))

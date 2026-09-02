@@ -1,23 +1,43 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 [build-system]
-requires = ["hatchling>=1.24.0"]
+requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "ambit-grader"
-version = "0.1.0"
+version = "0.2.0"
 description = "Grades what execution evidence can and cannot prove about who authorised an action"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [{ name = "Ambit Systems" }]
-license = { text = "Proprietary" }
-classifiers = ["License :: Other/Proprietary License"]
-# Deliberately zero runtime dependencies. The grader is a trust object: its
-# supply-chain surface is the standard library and nothing else. Adding a
-# runtime dependency is a doctrine-level change, not a convenience.
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Topic :: Software Development :: Quality Assurance",
+  "Typing :: Typed",
+]
+keywords = ["audit", "authorisation", "evidence", "agents", "governance", "DEMM"]
+# Zero runtime dependencies by design. The grader is a trust object. Its
+# supply-chain surface is the Python standard library only.
 dependencies = []
+
+[project.urls]
+Homepage = "https://ambit-systems.com/"
+Documentation = "https://docs.ambit-systems.com/verify/grade-your-traces/"
+Source = "https://github.com/ambit-systems/ambit-grader"
+Changelog = "https://github.com/ambit-systems/ambit-grader/blob/main/CHANGELOG.md"
 
 [project.scripts]
 ambit-grade = "ambit_grader.cli:main"
@@ -46,14 +66,13 @@ select = [
 ]
 ignore = [
   "B008", "ANN401", "D105", "D107",
-  "N818",
 ]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["D", "ANN", "S101", "C408", "PTH", "RUF043", "RUF059", "N801"]
+"tests/**" = ["D", "ANN", "C408", "PTH", "RUF043", "RUF059", "N801"]
 "**/__init__.py" = ["D104"]
 
 [tool.ruff.format]
@@ -73,23 +92,24 @@ disallow_incomplete_defs = true
 check_untyped_defs = true
 disable_error_code = ["import-untyped"]
 
+# Tests are the behaviour lock, not public API. mypy checks them for real
+# errors but does not demand annotations, matching the ruff ANN waiver.
 [[tool.mypy.overrides]]
 module = ["tests.*"]
 disallow_untyped_defs = false
 check_untyped_defs = true
 disable_error_code = ["no-untyped-call"]
 
-[tool.hatch.build]
+[tool.hatch.build.targets.sdist]
 include = [
   "src/ambit_grader/**",
-  "README.md",
+  "tests/**",
+  "/README.md",
+  "/CHANGELOG.md",
+  "/SECURITY.md",
+  "/LICENSE",
+  "/NOTICE",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ambit_grader"]
-
-# Tests are the behaviour lock, not public API. They are type-checked for real
-# errors — a `dict | None` indexed without a guard is a test that crashes
-# rather than fails — but annotations are not demanded, matching the ruff
-# per-file-ignores that already waive ANN for tests. Relaxing both in one
-# place keeps the two tools telling the same story.

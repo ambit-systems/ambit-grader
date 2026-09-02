@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """Shape recognition and normalisation.
 
@@ -32,6 +32,35 @@ from ambit_grader.sufficiency import dig, interpretable
 
 #: Canonical verdicts. Sources may spell them in any case.
 _VERDICTS = frozenset({"ALLOW", "DENY", "ESCALATE"})
+
+#: Record types the adapter tier declares to be decision events.
+#:
+#: DEMM §3.2 makes the adapter tier responsible for declaring the
+#: fragment-to-property mapping, and the eight property classes are properties
+#: *of a decision event*. An Ambit ledger interleaves several other record
+#: types — approvals, consequence intents, outcomes, observatory scores — which
+#: are fragments about decisions, not decisions. Scoring them as decision
+#: events understates the estate: on a captured sample ledger they are 48% of
+#: records and drag three properties from fully fillable down to partial.
+DECISION_EVENT_TYPES: frozenset[str] = frozenset({"decision"})
+
+
+def is_decision_event(record: dict[str, Any]) -> bool:
+    """Return True if the record represents a decision event.
+
+    A record with no ``record_type`` but a ``decision`` verdict is treated as a
+    decision event, which keeps older flat receipts readable.
+
+    Args:
+        record: A normalised evidence record.
+
+    Returns:
+        True if the record is a decision event.
+    """
+    record_type = record.get("record_type")
+    if record_type is None:
+        return bool(record.get("decision"))
+    return isinstance(record_type, str) and record_type in DECISION_EVENT_TYPES
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,17 +129,25 @@ def _tool_name(record: dict[str, Any]) -> str | None:
     return None
 
 
-def _shape_of(record: dict[str, Any]) -> str | None:
-    """Name the shape of a record, or None if nothing recognisable is present."""
+def _shape_of(record: dict[str, Any]) -> tuple[str | None, foreign.Profile | None]:
+    """Name the shape of a record and the third-party profile that matched it.
+
+    Args:
+        record: A raw evidence record.
+
+    Returns:
+        The shape name, or ``None`` if nothing recognisable is present, and
+        the matching third-party profile, or ``None`` for Ambit shapes.
+    """
     record_type = record.get("record_type")
-    if record_type == "approval":
-        return "ambit_approval"
-    if record_type == "decision":
-        return "ambit_ledger"
-    if record_type is not None:
+    if isinstance(record_type, str):
+        if record_type == "approval":
+            return "ambit_approval", None
+        if record_type == "decision":
+            return "ambit_ledger", None
         # A typed Ambit fragment: consequence intent, outcome, observatory
         # score. Not a decision event, but recognised and kept for the joins.
-        return f"ambit_{record_type}"
+        return f"ambit_{record_type}", None
 
     # Third-party formats are matched before the untyped Ambit shapes. A bare
     # string `decision` is not an Ambit marker — governance formats use it too,
@@ -118,12 +155,12 @@ def _shape_of(record: dict[str, Any]) -> str | None:
     # own field mapping.
     profile = foreign.match(record)
     if profile is not None:
-        return profile.name
+        return profile.name, profile
 
     if isinstance(record.get("decision"), str):
-        return "ambit_ledger"
+        return "ambit_ledger", None
     if isinstance(record.get("decision"), dict) and dig(record, "decision.outcome") is not None:
-        return "ambit_receipt_payload"
+        return "ambit_receipt_payload", None
     # Homegrown logs carry no verdict and no type, but are still evidence if
     # they say who did what. Recognised so foreign JSONL can be graded; the
     # unrecognised bucket is reserved for records that say nothing at all.
@@ -131,8 +168,8 @@ def _shape_of(record: dict[str, Any]) -> str | None:
         interpretable(dig(record, path))
         for path in ("actor_id", "actor.id", "tool_name", "action.type", "object.id")
     ):
-        return "generic_jsonl"
-    return None
+        return "generic_jsonl", None
+    return None, None
 
 
 def normalise_record(record: dict[str, Any]) -> dict[str, Any] | None:
@@ -140,21 +177,35 @@ def normalise_record(record: dict[str, Any]) -> dict[str, Any] | None:
 
     The canonical form is the decision-ledger shape, because that is what the
     property checks read: an uppercase string ``decision``, a top-level
-    ``tool_name``, and ``policy_hash`` reachable at the top level.
+    ``tool_name``, and ``policy_hash`` reachable at the top level. A
+    ``record_type`` or ``decision`` that is not a string the checks can read
+    is dropped, so downstream code never sees a list or dict in either field.
+
+    Args:
+        record: A raw evidence record.
+
+    Returns:
+        The normalised record, or ``None`` if no shape matched.
     """
-    shape = _shape_of(record)
+    shape, profile = _shape_of(record)
     if shape is None:
         return None
+    return _apply(record, profile)
 
-    profile = foreign.match(record)
+
+def _apply(record: dict[str, Any], profile: foreign.Profile | None) -> dict[str, Any]:
+    """Map a recognised record onto canonical paths."""
     out = profile.apply(record) if profile is not None else dict(record)
+
+    if not isinstance(out.get("record_type"), str):
+        out.pop("record_type", None)
 
     verdict = _verdict(out) or _verdict(record)
     if verdict is not None:
         out["decision"] = verdict
-    elif isinstance(out.get("decision"), dict):
-        # An object verdict we could not read: drop it rather than leave an
-        # unhashable value where downstream code expects a verdict.
+    else:
+        # A verdict we could not read: drop it rather than leave a value where
+        # downstream code expects one of the canonical strings.
         out.pop("decision", None)
 
     # Structured per-rule reasoning lives under `decision.reasons` in the
@@ -205,21 +256,24 @@ def normalise_record(record: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def normalise(records: list[dict[str, Any]]) -> Normalised:
-    """Normalise a batch, counting shapes and skipping what cannot be read."""
+    """Normalise a batch, counting shapes and skipping what cannot be read.
+
+    Args:
+        records: Raw evidence records.
+
+    Returns:
+        The normalised records with shape counts and the unrecognised total.
+    """
     normalised: list[dict[str, Any]] = []
     shapes: Counter[str] = Counter()
     unrecognised = 0
 
     for record in records:
-        shape = _shape_of(record)
+        shape, profile = _shape_of(record)
         if shape is None:
             unrecognised += 1
             continue
-        mapped = normalise_record(record)
-        if mapped is None:  # pragma: no cover - guarded by _shape_of above
-            unrecognised += 1
-            continue
         shapes[shape] += 1
-        normalised.append(mapped)
+        normalised.append(_apply(record, profile))
 
     return Normalised(records=normalised, shapes=shapes, unrecognised=unrecognised)

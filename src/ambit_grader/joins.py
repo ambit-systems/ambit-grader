@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """Corpus-level checks whose evidence spans more than one record.
 
@@ -31,6 +31,15 @@ def _is_approval(record: dict[str, Any]) -> bool:
 
 def _is_decision(record: dict[str, Any]) -> bool:
     return record.get("record_type") in (None, "decision") and bool(record.get("decision"))
+
+
+def _scalar_key(value: Any) -> str | int | None:
+    """Return the value if it can serve as a join key, otherwise None.
+
+    A foreign format may put a list or dict where a scalar identity was
+    expected. Such a value is never a match and must never be a crash.
+    """
+    return value if isinstance(value, (str, int)) else None
 
 
 def chain_integrity(records: list[dict[str, Any]]) -> PropertyVerdict:
@@ -89,19 +98,20 @@ def chain_integrity(records: list[dict[str, Any]]) -> PropertyVerdict:
     )
 
 
-def _approval_index(records: list[dict[str, Any]]) -> dict[Any, dict[str, Any]]:
+def _approval_index(records: list[dict[str, Any]]) -> dict[str | int, dict[str, Any]]:
     """Index approval records by the request fingerprint they authorise."""
-    return {
-        r.get("approval_fingerprint"): r
-        for r in records
-        if _is_approval(r) and interpretable(r.get("approval_fingerprint"))
-    }
+    index: dict[str | int, dict[str, Any]] = {}
+    for r in records:
+        key = _scalar_key(r.get("approval_fingerprint"))
+        if key is not None and _is_approval(r) and interpretable(key):
+            index[key] = r
+    return index
 
 
 def _approval_envelope_resolves(record: dict[str, Any]) -> bool:
     """Return True if the record's own approval envelope names a bound approver.
 
-    Real valve receipts carry the join result inside a nested ``approval``
+    Ambit engine receipts carry the join result inside a nested ``approval``
     envelope (``approver``, ``fingerprint_bound``, ``valid``), not at the top
     level. Reading only the flat fields misses the evidence the property asks
     for on Ambit's own native format.
@@ -205,7 +215,7 @@ def _delegation_issuer_evidenced(record: dict[str, Any]) -> bool:
     return interpretable(root) and isinstance(kind, str) and "hmac" not in kind.lower()
 
 
-def _authority_resolved(record: dict[str, Any], approvals: dict[Any, dict[str, Any]]) -> bool:
+def _authority_resolved(record: dict[str, Any], approvals: dict[str | int, dict[str, Any]]) -> bool:
     """Return True if a permitted action is bound to a *named principal*.
 
     Three routes: the record's own approval envelope, a separate approval
@@ -215,44 +225,43 @@ def _authority_resolved(record: dict[str, Any], approvals: dict[Any, dict[str, A
     """
     if _approval_envelope_resolves(record):
         return True
-    approval = approvals.get(record.get("request_fingerprint"))
+    key = _scalar_key(record.get("request_fingerprint"))
+    approval = approvals.get(key) if key is not None else None
     if approval is not None and interpretable(approval.get("approval_approver")):
         return True
     return _delegation_is_live(record) and _delegation_issuer_evidenced(record)
 
 
-def _attestation_index(records: list[dict[str, Any]]) -> dict[Any, dict[str, Any]]:
+def _attestation_index(records: list[dict[str, Any]]) -> dict[str | int, dict[str, Any]]:
     """Index policy attestations by the policy_hash they attest.
 
     An attestation binds a policy version to the principal who approved it. It
     is what lets a policy-permitted action name a principal: the authority is
     inherited from the governed policy rather than asserted per call.
     """
-    return {
-        r.get("policy_hash"): r
-        for r in records
-        if r.get("record_type") == "policy_attestation"
-        and interpretable(r.get("policy_hash"))
-        and interpretable(r.get("approver"))
-        # Asymmetric only. A symmetric attestation cannot evidence an issuer,
-        # so accepting one would reintroduce the gap it exists to close.
-        and interpretable(r.get("trust_root_id"))
-    }
+    index: dict[str | int, dict[str, Any]] = {}
+    for r in records:
+        key = _scalar_key(r.get("policy_hash"))
+        if (
+            key is not None
+            and r.get("record_type") == "policy_attestation"
+            and interpretable(key)
+            and interpretable(r.get("approver"))
+            # Asymmetric only. A symmetric attestation cannot evidence an
+            # issuer, so accepting one would reintroduce the gap it exists to
+            # close.
+            and interpretable(r.get("trust_root_id"))
+        ):
+            index[key] = r
+    return index
 
 
-def _policy_attested(record: dict[str, Any], attestations: dict[Any, dict[str, Any]]) -> bool:
+def _policy_attested(record: dict[str, Any], attestations: dict[str | int, dict[str, Any]]) -> bool:
     """True if the policy that permitted this action names an approver."""
     for path in ("policy_hash", "evidence.hashes.policy_hash"):
-        value = dig(record, path)
-        if not interpretable(value):
-            continue
-        try:
-            if value in attestations:
-                return True
-        except TypeError:
-            # Unhashable: a foreign format put a list or dict where a scalar
-            # identity was expected. Not a match, and never a crash.
-            continue
+        key = _scalar_key(dig(record, path))
+        if key is not None and interpretable(key) and key in attestations:
+            return True
     return False
 
 

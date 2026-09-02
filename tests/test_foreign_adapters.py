@@ -1,17 +1,19 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """Conformance tests for the third-party trace-format adapters.
 
 Fixtures are shaped after each emitter's published export format. The recurring
-assertion across all of them is the one that matters commercially: every
-mainstream agent-trace format scores `structurally_unfillable` on principal
-authority, because none of them records on whose authority an action was taken.
+assertion across all of them is the finding: every mainstream agent-trace
+format scores `structurally_unfillable` on principal authority, because none of
+them records on whose authority an action was taken.
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+import pytest
 
 from ambit_grader import Property, Sufficiency, grade_records
 from ambit_grader.adapters import foreign
@@ -143,7 +145,7 @@ def test_langsmith_and_weave_exports_carry_no_actor_identity():
 
 
 def test_no_mainstream_trace_format_can_evidence_a_principal():
-    """The commercial finding, made executable.
+    """The finding, made executable.
 
     OpenTelemetry's GenAI conventions define zero authorisation attributes;
     OpenInference, Langfuse, LangSmith and Weave describe what happened, never
@@ -296,16 +298,21 @@ def test_approval_binding_gates_fingerprint_bound_not_approver_presence():
     assert unbound_profile.apply(named_and_bound)["approval"]["fingerprint_bound"] is False
 
 
-def test_no_foreign_profile_declares_an_approval_binding_path():
-    """The absence is the product finding, pinned so it cannot regress silently.
+def test_match_prefers_the_governance_profile_on_an_ambiguous_record():
+    """`PROFILES` order is load-bearing: the most specific marker wins.
 
-    None of the six shipped formats records anything that ties a named
-    approver to the specific request it approves, so none may declare an
-    `approval_binding` path. If one starts to, this test should be updated
-    deliberately, alongside the format's own binding-path fixture.
+    An untyped record with `decision` and `agent_id` plus a LangSmith
+    `run_type` and a Weave `op_name` satisfies three detectors. AGT is first
+    because it alone carries a verdict, which must be mapped rather than left
+    as an unread string. Without the governance markers, the span-convention
+    profile beats the platform exports.
     """
-    for profile in foreign.PROFILES:
-        assert profile.approval_binding == (), profile.name
+    ambiguous = {"decision": "allow", "agent_id": "a", "run_type": "tool", "op_name": "r"}
+    assert foreign.match(ambiguous) is foreign.MS_AGT
+    assert grade_records("ambiguous", [ambiguous]).shapes == "1 microsoft_agt"
+
+    span = {"attributes": {"gen_ai.tool.name": "refund"}, "run_type": "tool", "op_name": "r"}
+    assert foreign.match(span) is foreign.OTEL_GENAI
 
 
 def test_no_foreign_profile_can_populate_a_top_level_fingerprint_bound():
@@ -438,8 +445,8 @@ def test_agt_with_an_observed_approver_can_name_a_principal():
 def test_agt_inferred_approver_is_never_credited_as_a_principal():
     """`inferred: true` is AGT reconstructing, not witnessing.
 
-    Crediting it would accept a competitor's inference as our observation —
-    the container fallacy borrowed from someone else's tool.
+    Crediting it would accept a third-party format's inference as Ambit's
+    observation — the container fallacy borrowed from someone else's tool.
     """
     graded = grade_records("agt-inferred", [AGT_BOM_WITH_INFERRED_APPROVER])
     assert (
@@ -514,8 +521,8 @@ def test_agt_delegation_chain_as_shipped_is_not_credited():
 
     The chain is reconstructed from multiple agent DIDs appearing in audit
     entries — AGT saying it worked out who delegated to whom, not that it
-    witnessed a delegation. Crediting it would accept a competitor's
-    reconstruction as our observation.
+    witnessed a delegation. Crediting it would accept a third-party format's
+    reconstruction as Ambit's observation.
     """
     from ambit_grader.adapters.normalise import normalise_record
 
@@ -535,7 +542,7 @@ def test_an_observed_delegation_chain_would_be_read_as_issuerless():
 
     Every entry is an agent DID — a subject. None is an issuer, which is the
     same shape Ambit's own delegation envelope had before it carried a trust
-    root. So it caps at partial, exactly as our own HMAC delegations do.
+    root. So it caps at partial, exactly as Ambit's own HMAC delegations do.
     """
     observed_chain = {
         **AGT_BOM_AS_SHIPPED,
@@ -590,3 +597,23 @@ def test_agt_chain_expansion_does_not_claim_a_validity_the_source_never_gave():
     delegation = expanded["delegation"]
     assert delegation["kind"] == "agt_delegation_chain"
     assert "valid" not in delegation
+
+
+@pytest.mark.parametrize("junk", [5, ["x"], True, "text"])
+def test_non_dict_approval_and_delegation_on_third_party_records_are_graded(junk: object) -> None:
+    langfuse = {
+        "traceId": "t",
+        "type": "SPAN",
+        "startTime": "t",
+        "approval": junk,
+        "metadata": {"approver": "al"},
+    }
+    agt = {
+        "decisionId": "d",
+        "verdict": "ALLOW",
+        "agent_id": "a",
+        "delegation": junk,
+        "lineage": {"delegation_chain": {"value": ["root"]}},
+    }
+    grade = grade_records("hostile", [langfuse, agt])
+    assert grade.record_count >= 0

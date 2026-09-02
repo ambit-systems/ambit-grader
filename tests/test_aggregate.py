@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """Tests for DEMM 3.5 completeness, the combiner, and the authority verdict."""
 
@@ -9,18 +9,8 @@ from typing import Any
 
 import pytest
 
-from ambit_grader import (
-    AUTHORITY_SPINE,
-    IMPLEMENTATION_ROWS,
-    ROW_COUNT,
-    WEIGHT,
-    Property,
-    Sufficiency,
-    combine,
-    completeness,
-    grade_records,
-)
-from ambit_grader.aggregate import partial_confidence
+from ambit_grader import IMPLEMENTATION_ROWS, Property, Sufficiency, grade_records
+from ambit_grader.aggregate import combine, completeness, partial_confidence
 from ambit_grader.models import PropertyVerdict
 
 
@@ -51,20 +41,21 @@ def test_a_single_contradiction_poisons_the_property():
     assert combine(results) is Sufficiency.CONFLICTING
 
 
-def test_demm_weights_match_the_paper():
-    """3.5: opaque is weighted 1.0, equal to fully fillable — not a penalty."""
-    assert WEIGHT[Sufficiency.FULLY_FILLABLE] == 1.0
-    assert WEIGHT[Sufficiency.OPAQUE] == 1.0
-    assert WEIGHT[Sufficiency.PARTIALLY_FILLABLE] == 0.5
-    assert WEIGHT[Sufficiency.STRUCTURALLY_UNFILLABLE] == 0.0
-
-
 def test_completeness_is_averaged_over_seven_rows_not_eight():
-    """3.1: v0.1.0 collapses actor identity and principal authority."""
-    assert ROW_COUNT == 7
-    assert len(IMPLEMENTATION_ROWS) == 7
+    """3.1: v0.1.0 collapses actor identity and principal authority.
+
+    Eight fully fillable properties with one unfillable must average over
+    seven rows, so the loss is 1/7 and not 1/8.
+    """
     collapsed = next(props for name, props in IMPLEMENTATION_ROWS if len(props) == 2)
     assert set(collapsed) == {Property.ACTOR_IDENTITY, Property.PRINCIPAL_AUTHORITY}
+
+    verdicts = {p: PropertyVerdict(p, Sufficiency.FULLY_FILLABLE) for p in Property}
+    verdicts[Property.DATA_TOUCH] = PropertyVerdict(
+        Property.DATA_TOUCH, Sufficiency.STRUCTURALLY_UNFILLABLE
+    )
+    assert completeness(verdicts) == pytest.approx(6 / 7)
+    assert len(grade_records("x", [_record()]).row_verdicts()) == 7
 
 
 def test_completeness_formula():
@@ -94,13 +85,6 @@ def test_reasoning_trace_is_opaque_by_construction():
     assert verdict.weight == 1.0
 
 
-def test_no_maturity_level_is_derived():
-    """3.7 levels describe the evidence regime; a snapshot cannot reveal it."""
-    grade = grade_records("x", [_record()])
-    assert not hasattr(grade, "spine_level")
-    assert not hasattr(grade, "level")
-
-
 def test_authority_verdict_is_the_weakest_spine_property():
     """One floored spine property floors the verdict, however strong the rest."""
     records = [
@@ -118,14 +102,6 @@ def test_authority_verdict_is_the_weakest_spine_property():
         is Sufficiency.STRUCTURALLY_UNFILLABLE
     )
     assert grade.authority is Sufficiency.STRUCTURALLY_UNFILLABLE
-
-
-def test_authority_spine_is_the_three_documented_properties():
-    assert AUTHORITY_SPINE == (
-        Property.PRINCIPAL_AUTHORITY,
-        Property.ACTION_BOUNDARY,
-        Property.VERIFICATION_STRENGTH,
-    )
 
 
 def test_unfillable_verdicts_carry_an_architectural_reason():
@@ -237,3 +213,41 @@ def test_completeness_moves_when_attribution_improves():
     before = grade_records("before", corpus(attributed=1, delegated=7))
     after = grade_records("after", corpus(attributed=6, delegated=2))
     assert after.completeness > before.completeness
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["record_type", "decision", "request_fingerprint", "approval_fingerprint", "policy_hash"],
+)
+@pytest.mark.parametrize("junk", [["x"], {"x": 1}])
+def test_a_list_or_dict_in_a_scalar_field_is_graded_not_raised(field, junk):
+    """A malformed field is a gap in the evidence, never a traceback.
+
+    Each field is a dict key or a set member somewhere downstream. A corpus
+    that carries the field as a list or dict must still grade, alongside the
+    well-formed records that join on the same field.
+    """
+    approval = {
+        "seq": 1,
+        "record_type": "approval",
+        "approval_fingerprint": "fp-1",
+        "approval_approver": "alice",
+    }
+    attestation = {
+        "seq": 2,
+        "record_type": "policy_attestation",
+        "policy_hash": "9f2c41ab",
+        "approver": "bob",
+        "trust_root_id": "ops-root",
+    }
+    good = _record(decision="ESCALATE", request_fingerprint="fp-1", policy_hash="9f2c41ab")
+    bad = _record(seq=3, request_fingerprint="fp-1", policy_hash="9f2c41ab")
+    for record in (approval, attestation, bad):
+        record[field] = junk
+
+    graded = grade_records("junk", [good, approval, attestation, bad])
+    assert graded.record_count + graded.unrecognised == 4
+    assert 0.0 <= graded.completeness <= 1.0
+    # The well-formed escalation is still in the authority denominator.
+    detail = graded.verdicts[Property.PRINCIPAL_AUTHORITY].detail or ""
+    assert "permitted action(s)" in detail

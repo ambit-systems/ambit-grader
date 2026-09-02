@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """Tests for the corpus-level joins: chain integrity and principal authority."""
 
@@ -76,7 +76,7 @@ def test_resolved_escalations_evidence_authority():
 
 
 def test_precomputed_fingerprint_bound_is_authoritative():
-    """Real valve receipts state the join result; no fingerprint match needed."""
+    """Ambit engine receipts state the join result; no fingerprint match needed."""
     records = [
         _decision(
             0,

@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """Command-line entry point for the grader.
 
@@ -15,8 +15,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ambit_grader.adapters import ambit_receipts
 from ambit_grader.aggregate import grade_records
+from ambit_grader.jsonl import EvidenceReadError, load
 from ambit_grader.report import render_json, render_text
 
 EXIT_OK = 0
@@ -32,6 +32,28 @@ A CI gate needs to tell "your evidence is thin" apart from "I could not read
 your file". They are different problems with different remedies, so they get
 different codes.
 """
+
+
+def _fraction(text: str) -> float:
+    """Parse a completeness threshold in [0, 1] for argparse.
+
+    Args:
+        text: The command-line value.
+
+    Returns:
+        The parsed threshold.
+
+    Raises:
+        argparse.ArgumentTypeError: If the value is not a number in [0, 1].
+            ``nan`` fails the range comparison and is rejected too.
+    """
+    try:
+        value = float(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number") from exc
+    if not 0.0 <= value <= 1.0:
+        raise argparse.ArgumentTypeError(f"{text!r} is not in the range 0-1")
+    return value
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--min-completeness",
-        type=float,
+        type=_fraction,
         default=None,
         metavar="FRACTION",
         help="exit non-zero if any DEMM completeness is below FRACTION (0-1)",
@@ -70,13 +92,14 @@ def run_grade(
     """Grade every path, render what succeeded, and return an exit code.
 
     Shared by the standalone ``ambit-grade`` entry point and by ``ambit grade``
-    in ambit-cli, so the two cannot drift apart on exit codes or on how partial
-    failures are handled.
+    in the Ambit CLI, so the two cannot drift apart on exit codes or on how
+    partial failures are handled.
 
     Every path is attempted. A path that cannot be read is reported on stderr
     and the remaining paths are still graded: discarding a completed grade
     because a sibling file was malformed would throw away work the operator
-    asked for and can act on.
+    asked for and can act on. A read error outranks a completeness breach in
+    the exit code.
 
     Args:
         paths: Evidence files to grade.
@@ -92,19 +115,18 @@ def run_grade(
     read_failed = False
     for path in paths:
         try:
-            records = ambit_receipts.load(path)
-        except ambit_receipts.EvidenceReadError as exc:
+            records = load(path)
+        except EvidenceReadError as exc:
             # stderr, never stdout: stdout carries the report, and with
             # --format json an error line there would corrupt the document
             # the caller is parsing.
             print(f"error: {exc}", file=sys.stderr)
             read_failed = True
             continue
-        grades.append(grade_records(path.name, records))
+        grades.append(grade_records(str(path), records))
 
-    if grades:
-        renderer = render_json if output_format == "json" else render_text
-        print(renderer(grades), end="")
+    renderer = render_json if output_format == "json" else render_text
+    print(renderer(grades), end="")
 
     if read_failed:
         return EXIT_READ_ERROR

@@ -1,119 +1,196 @@
 # ambit-grader
 
-Grades what execution evidence can and cannot prove about **who authorised an action**.
+`ambit-grader` grades what existing execution evidence can and cannot prove about **who authorised an action**.
 
-Free, local, offline. It reads evidence you already have and tells you, property by property, which governance questions that evidence can answer — and which it cannot.
+It reads an evidence file you already have. It reports, property by property, which governance questions that evidence can answer and which it cannot. It is read-only and offline. It executes nothing.
 
 ## What it does
 
-Point it at an evidence file. It returns three things, in this order:
+Give it a JSONL evidence file. It returns three things, in this order:
 
-1. **A sentence you can act on** — "10 permitted actions: 4 attributable to a named approver, 6 policy-permitted only. Next: attest the policy that permitted the 6 automatic allows."
-2. **A property table** — the eight DEMM property classes, each carrying a fillability category, an architectural reason where unfillable, and the upstream change that would close the gap.
-3. **Two aggregates, never blended** — DEMM reconstruction completeness, and Ambit's own authority verdict.
-
-```bash
-ambit-grade receipts.jsonl
-ambit-grade receipts.jsonl --format json
-ambit-grade receipts.jsonl --min-completeness 0.8   # exit 1 below 80% completeness
-```
+1. **One sentence you can act on.** Example from a shipped fixture: `2 permitted action(s): 0 attributable to a named principal, 0 under a delegation whose issuer is not evidenced, 1 policy-permitted only, 1 escalated without a resolving approval, 0 naming an approver not bound to this action, 0 with no authority evidence at all (1 denial(s) excluded). Next: link the 1 unresolved escalation(s) to an approval record carrying a named approver.`
+2. **A property table.** One row for each of the eight DEMM property classes. Each row carries a fillability category. An unfillable row carries an architectural reason and the upstream change that would close the gap.
+3. **Two aggregates, never blended.** DEMM reconstruction completeness, and Ambit's own authority verdict.
 
 ## What it does not do
 
-- **No network.** Not configurable — there is no network code.
-- **No execution.** Nothing in the evidence is ever run. Contrast with scanners that spawn servers to enumerate their tools.
+- **No network.** There is no network code. This is not a setting.
+- **No execution.** Nothing in the evidence is run. The grader parses records and scores them.
+- **No subprocess.** The grader spawns nothing.
 - **No telemetry.** Nothing leaves the machine.
-- **No runtime dependencies.** The supply-chain surface is the Python standard library. Adding a runtime dependency is a doctrine-level change, not a convenience.
+- **No runtime dependencies.** The supply-chain surface is the Python standard library. See `SECURITY.md`.
 
-## The measure is not ours
+## Install
 
-The property architecture is the **Decision Evidence Maturity Model** (DEMM, arXiv 2605.04093) with its Decision Event Schema (MIT) and reference implementation (Apache-2.0). The eight property classes (§3.1), the five fillability categories (§3.5), the completeness formula and its weights (§3.5), the seven-row v0.1.0 collapse (§3.1), the reasoning-trace opacity boundary (§3.4), and the gap-closing recommendations (§3.6) are implemented as published.
+Python 3.12 or later.
 
-This is deliberate. A yardstick Ambit authored is a yardstick Ambit can be accused of shaping to flatter its own product — the same objection Ambit makes to substrate vendors grading their own evidence. Grading against a measure written by someone else is what lets the result be cited by someone who does not trust Ambit.
+```bash
+pip install ambit-grader
+```
 
-Two outputs, never blended:
+## Run
 
-- **DEMM reconstruction completeness** — the §3.5 weighted average over the seven v0.1.0 implementation rows, comparable to any other implementation of the published formula;
-- **the Ambit authority verdict** — the weakest of principal authority, action boundary, and verification strength. Ambit's scoping, labelled as ours.
+```bash
+ambit-grade evidence.jsonl
+ambit-grade evidence.jsonl --format json
+ambit-grade a.jsonl b.jsonl                   # one report, one column per file
+ambit-grade evidence.jsonl --min-completeness 0.8   # exit 5 below 80 % completeness
+```
 
-They are reported separately because they disagree, and the disagreement is the information. On the conformance corpora, `receipts.sample` scores **higher** DEMM completeness than `receipts.rich` (78.6% against 55.7%) while its authority verdict is **worse** — it carries an escalation nobody approved, which floors the spine no matter how well the rest of the record is populated. A single blended number would hide exactly the finding worth having.
+`ambit-grade --help` lists the options.
 
-**No DEMM maturity level is derived.** §3.7's five levels describe the evidence *regime* — whether reconstruction is manual on challenge, automated by design, exercised against a question battery, or monitored as an SLO. None of that is visible in a static evidence file, so assigning a level from a snapshot would be an invention wearing DEMM's name. `LEVEL_DESCRIPTIONS` records them for reference only.
+## Supported formats
 
-**Opaque is not a failure.** §3.4 draws the ML-opacity boundary: post-hoc reconstruction of internal model reasoning conflates governance with explainability, so the reasoning trace is classified opaque uniformly and an authorisation envelope is substituted. §3.5 weights it **1.0**, equal to fully fillable. A placeholder digest is not opaque — it is `structurally_unfillable` with reason `evidence_never_persisted`.
+The input is newline-delimited JSON, encoded as UTF-8. A leading byte order mark is skipped. A file that is not valid UTF-8 is a read error. Every non-blank line must be a JSON object. The grader recognises the shape of each record. It maps known fields onto canonical paths. It never invents a value: a field absent from the source stays absent.
 
-**Completeness is protocol-relative, and its partial weight is a real confidence.** §3.5 defines the partially-fillable weight as "confidence in [0, 1]", of which 0.5 is only the reference implementation's *uncalibrated default*. Treating it as a constant makes the score blind: a property fillable for one action in eight would weigh exactly the same as one fillable for six in eight. Where a check can compute the share it is actually confident about it supplies it, and the 0.5 default applies only where no principled fraction exists.
+| Shape name | Recognised by |
+|---|---|
+| `ambit_ledger` | `record_type: "decision"`, or a string `decision` verdict with no `record_type` |
+| `ambit_approval` | `record_type: "approval"` |
+| `ambit_<type>` | any other string `record_type` (consequence intent, outcome, observatory score); kept for the joins, not scored as a decision event. A `record_type` that is not a string is dropped and the record is matched on its other fields |
+| `ambit_receipt_payload` | `decision` is an object with an `outcome` |
+| `microsoft_agt` | Microsoft Agent Governance Toolkit decision records and Decision BOMs (`decision` with `policy_id`, `agent_id` or `agt`; or `decision_id` + `agent_id` + `outcome`) |
+| `otel_genai` | OpenTelemetry GenAI semantic conventions (any `gen_ai.*` attribute) |
+| `openinference` | OpenInference spans (any `openinference.*` or `llm.*` attribute) |
+| `langsmith` | LangSmith run export (`run_type`, or `trace_id` + `inputs`) |
+| `weave` | Weights & Biases Weave call export (`op_name`) |
+| `langfuse` | Langfuse observation export (`traceId`, or `type` + `startTime`) |
+| `generic_jsonl` | no verdict and no type, but at least one of `actor_id`, `actor.id`, `tool_name`, `action.type`, `object.id` |
 
-That sensitivity is not cosmetic. Regenerating Ambit's own demo ledger with asymmetrically-signed delegations moved attribution from 1 of 8 permitted actions to 6 of 8; under a flat 0.5 the completeness figure did not move at all, and under the real confidence it goes 84.8% → 89.3%. Completeness compares runs of this tool; it is not an absolute score.
+A record that matches no shape is counted as `unrecognised` and reported. It is not raised as an error. A line that is not a JSON object is an error: the file is malformed, and a grade computed around it would be a false assurance.
 
-## Two properties are corpus-level, and that is the point
+None of the six third-party trace formats carries an authorisation attribute. An estate instrumented with any of them scores `structurally_unfillable` on principal authority whatever the trace richness. That is the gap the grader exists to name.
 
-`principal_authority` and `verification_strength` are **not** scored per record. Their evidence lives in the joins *between* records — an escalation and the approval that resolved it, a hash and the record it chains to.
+## Exit codes
 
-Scoring them per record is the container fallacy: mistaking the presence of an evidence container for the sufficiency of the evidence. The first implementation of this grader made exactly that mistake, reporting authority as unreconstructible over a corpus that carried a complete approval chain in adjacent records. `tests/test_container_fallacy.py` makes that failure permanent, including the case that matters most — a corpus with **more** fully-fillable properties and **higher** DEMM completeness still scoring worse on authority, because its joins are broken.
+| Code | Meaning |
+|---|---|
+| `0` | Every path graded. No completeness gate breached. |
+| `1` | At least one path could not be read or parsed. The other paths are still graded and rendered. |
+| `2` | Usage error (argparse). |
+| `5` | A grade fell below `--min-completeness`. |
 
-## Permission is not authority
+Errors go to stderr. The report goes to stdout, so `--format json` output stays parseable. Code `1` takes precedence over code `5`: when one path is unreadable and another grade is below the gate, the exit code is `1`. `--min-completeness` accepts a number in the range 0-1; any other value is a usage error.
 
-An `ALLOW` under a named policy proves the action was *within a rule*. It does not prove any principal took responsibility for it. So a corpus of automatic allows is capped at `partial` on principal authority however clean it is, and the next move it reports is to attest the policy itself — bind `policy_hash` to a signed record naming who approved that policy version.
+## Output
 
-Denials are excluded from the authority denominator. A refused action executed nothing and owes no account of who authorised it; counting denials would let an estate flatter itself by refusing more often.
+Text output (default): one header and one headline sentence per file, then a table with one column per file. The table has eight property rows, a `DEMM completeness (7 rows)` row and an `Ambit authority verdict` row. Two fixed notes follow that explain the two aggregates.
 
-## Delegation is not issuer
+JSON output (`--format json`): a list with one object per file.
 
-This is the subtlest rule in the grader, and the one that decides whether it can be trusted about its own vendor.
+```json
+[
+  {
+    "source": "evidence.jsonl",
+    "record_count": 4,
+    "shapes": "1 ambit_approval, 3 ambit_ledger",
+    "unrecognised": 0,
+    "demm": {
+      "completeness": 0.7857,
+      "row_verdicts": { "<row>": "<sufficiency>" },
+      "properties": {
+        "<property>": {
+          "sufficiency": "fully_fillable | partially_fillable | structurally_unfillable | opaque | conflicting",
+          "weight": 1.0,
+          "reason": "<architectural reason or null>",
+          "recommendation": "<upstream change that closes the gap or null>",
+          "detail": "<what was counted>"
+        }
+      }
+    },
+    "ambit": {
+      "authority_verdict": "<sufficiency>",
+      "spine": ["principal_authority", "action_boundary", "verification_strength"],
+      "headline": "<the sentence>",
+      "next_move": "<the one defaulted next action>"
+    }
+  }
+]
+```
 
-A delegation envelope proves a specific signed grant — strictly more than policy permission. But it names its **`subject`**: the agent the authority was granted *to*. The **issuer** is the principal, and it is the issuer that "who authorised this" asks for.
+`record_count` is the number of records that matched a known shape. It excludes `unrecognised`. `source` is the path as given on the command line.
 
-Ambit's own captured receipts used to fail this. Their delegation envelopes carried `id`, `jti`, `kind`, `scope`, `subject`, `valid`, `revoked`, duration and a full revocation chain — and no issuer at all, because the slips were HMAC-signed. The grader reported 1 of 8 permitted actions naming a principal. The fix was upstream, not in the grader: sign delegations asymmetrically and let the receipt record the verified trust root.
+The eight properties are `actor_identity`, `principal_authority`, `action_boundary`, `policy_basis`, `decision_basis`, `data_and_resource_touch`, `lifecycle_context` and `verification_strength`.
 
-An HMAC token cannot close the gap. Its verify key is its forge key, so anyone able to verify the token could have minted it; a symmetric credential structurally cannot identify its issuer to a third party. Only an explicit `issuer`/`granted_by` field, or an asymmetric signature whose trust root names the grantor, evidences a principal.
+## The measure
 
-So a live delegation without an evidenced issuer is a **distinct third class**, capped at `partially_fillable` and counted separately from human-approved escalations:
+The property architecture is the **Decision Evidence Maturity Model** (DEMM, arXiv 2605.04093). The grader implements the eight property classes (§3.1), the five fillability categories (§3.5), the completeness formula and its weights (§3.5), the seven-row v0.1.0 collapse (§3.1), the reasoning-trace opacity boundary (§3.4), and the gap-closing recommendations (§3.6) as published. `docs/references/README.md` maps each section to the code.
+
+Ambit did not write the measure. A yardstick Ambit authored could be shaped to flatter Ambit's own product. Grading against a published measure lets a reader who does not trust Ambit check the result.
+
+Two outputs are reported, and they are never blended:
+
+- **DEMM reconstruction completeness.** The §3.5 weighted average over the seven v0.1.0 implementation rows. Comparable to any other implementation of the published formula.
+- **The Ambit authority verdict.** The weakest of `principal_authority`, `action_boundary` and `verification_strength`. This is Ambit's scoping and is labelled as such.
+
+The two can disagree, and the disagreement is the finding. On the two shipped fixtures, `complete_records_broken_joins.jsonl` scores higher DEMM completeness than `sparse_records_complete_joins.jsonl` (78.6 % against 57.1 %) and a worse authority verdict (`structurally_unfillable` against `partially_fillable`). It carries an escalation that nobody approved. One blended number would hide that.
+
+**Partial weight is a real confidence.** §3.5 defines the partially-fillable weight as a confidence in [0, 1]. The reference implementation's 0.5 is an uncalibrated default. Where a check can compute the share of cases it is confident about, it supplies that share. The 0.5 default applies only where no principled fraction exists. Completeness therefore compares runs of this tool. It is not an absolute score.
+
+## How authority is graded
+
+**Permission is not authority.** An `ALLOW` under a named policy proves the action was within a rule. It does not prove that a principal took responsibility for it. A corpus of automatic allows is capped at `partially_fillable` on principal authority. The reported next move is to attest the policy: bind `policy_hash` to a signed record that names who approved that policy version.
+
+**Denials are excluded from the authority denominator.** A refused action executed nothing and owes no account of who authorised it.
+
+**Delegation is not issuer.** A delegation envelope names its `subject`, the agent the authority was granted to. The question "who authorised this" asks for the issuer. A symmetric (HMAC) credential cannot evidence its issuer to a third party, because its verify key is its forge key. Only an explicit `issuer` or `granted_by` field, or an asymmetric signature whose trust root names the grantor, evidences a principal. A live delegation without an evidenced issuer is a distinct class, capped at `partially_fillable`.
+
+**Naming an approver is not binding one.** An adapter sets `fingerprint_bound` only when the source record carries evidence tying that approver to this request: a request fingerprint or action hash the approval references. None of the six third-party formats carries that evidence, so a foreign approver is always recorded and never counted as bound.
+
+**Two properties are corpus-level.** `principal_authority` and `verification_strength` are not scored per record. Their evidence lives in the joins between records: an escalation and the approval that resolved it, a hash and the record it chains to. Scoring them per record is the container fallacy: mistaking the presence of an evidence container for the sufficiency of the evidence. `tests/test_container_fallacy.py` locks this in, including the case where a corpus with higher DEMM completeness scores worse on authority because its joins are broken.
 
 | Class | Verdict |
 |---|---|
-| Named principal — approval envelope, approval-record join, or issuer-evidenced delegation | can reach `fully_fillable` |
+| Named principal: approval envelope, approval-record join, or issuer-evidenced delegation | can reach `fully_fillable` |
 | Delegation, issuer not evidenced | capped at `partially_fillable` |
 | Policy-permitted only | capped at `partially_fillable` |
 | Escalated, no resolving approval | `structurally_unfillable` |
-| Permitted with no authority evidence at all — including a named approver that cannot be bound to this action | capped at `partially_fillable`; the two are still named separately in the detail, because the remedy differs |
+| Permitted with no authority evidence, or a named approver not bound to this action | capped at `partially_fillable`; the two are named separately in the detail because the remedy differs |
 
-Naming an approver is not binding one. An adapter only sets `fingerprint_bound` when the source record itself carries evidence tying that approver to *this* request — a request fingerprint or action hash the approval references — never merely because a name was found. None of the six foreign formats this tool reads carries that evidence, so a foreign approver is always recorded but never counted as bound; a `metadata.approver` on a Langfuse span, for instance, is real evidence someone was *named*, not evidence they authorised the specific action being graded.
+## What the grade does not claim
 
-Treating envelope presence as principal identification would be the container fallacy one level up, committed in the vendor's own favour — the single bias an independence argument cannot survive.
-
-The cost is paid in public. Run against Ambit's own richest captured demo ledger, this grader reports **1 of 8 permitted actions naming a principal**, 5 under delegations whose issuers are not evidenced. A grader that cannot embarrass its own vendor is not evidence.
-
-## Adapters
-
-One ships: Ambit decision-ledger and receipt JSONL. Harness doctrine §3.1 makes connector breadth an explicit anti-goal, so a second adapter waits for a real estate that needs one.
+- **It does not assign a DEMM maturity level.** §3.7 levels describe the evidence regime: whether reconstruction is manual on challenge, automated by design, exercised against a question battery, or monitored as an SLO. A static file does not show that. `ambit_grader.models.LEVEL_DESCRIPTIONS` records the levels for reference only.
+- **It does not verify signatures or recompute hashes.** `verification_strength` checks that each record's `prev_hash` equals the previous record's `record_hash`, and counts records outside the chain. It does not recompute a record hash from its content and it does not verify a signature. Use a ledger verifier for that.
+- **It does not read the Decision Event Schema.** Per-property fill criteria are Ambit's heuristics. §3.2 makes the adapter tier their proper home. `docs/references/README.md` names the one open fidelity gap.
+- **`opaque` is not a failure.** §3.4 classifies the reasoning trace as opaque and substitutes an authorisation envelope. §3.5 weights it 1.0. A placeholder digest is not opaque; it is `structurally_unfillable` with reason `evidence_never_persisted`.
+- **Completeness is not an absolute score.** It is protocol-relative. Compare runs of this tool against each other.
+- **A grade is not a security assessment.** The grader reports what the evidence proves. It does not test the system that produced the evidence.
 
 ## Library use
 
 ```python
-from pathlib import Path
+from ambit_grader import EvidenceReadError, grade_records, load_jsonl, render_text
 
-from ambit_grader import grade_records, render_text
-from ambit_grader.adapters import ambit_receipts
-
-records = ambit_receipts.load(Path("receipts.jsonl"))
-grade = grade_records("receipts.jsonl", records)
+try:
+    records = load_jsonl("evidence.jsonl")
+except EvidenceReadError as exc:
+    raise SystemExit(f"error: {exc}") from exc
+grade = grade_records("evidence.jsonl", records)
 
 print(grade.completeness, grade.authority, grade.next_move())
 print(render_text([grade]))
 ```
+
+`load_jsonl` accepts a `str` or any `os.PathLike`. It raises `EvidenceReadError` when the file cannot be read, is not UTF-8, or has a line that is not a JSON object.
+
+The supported library surface is the names in `ambit_grader.__all__`: `grade_records`, `load_jsonl`, `EvidenceReadError`, `Grade`, `PropertyVerdict`, `Property`, `Sufficiency`, `UnfillableReason`, `AUTHORITY_SPINE`, `IMPLEMENTATION_ROWS`, `render_text`, `render_json` and `to_dict`. `ambit_grader.cli.run_grade(paths, output_format=..., min_completeness=...)` is the same loop the CLI runs and returns the same exit codes. Other module-level names can change between minor versions.
 
 ## Development
 
 ```bash
 uv sync --extra dev
 uv run ruff check .
-uv run ruff format --check src tests
+uv run ruff format --check .
 uv run python scripts/check_file_size.py
 uv run mypy
 uv run pytest -q
+uv build
 ```
 
 ## Status
 
-Pre-release. The rubric has been exercised against hand-built fixtures only; it has never run against a captured production estate. That is the next test, and nothing here should be read as evidence that it converts, installs, or that anyone acts on the finding.
+The rubric has been exercised against hand-built fixtures and against captured Ambit sample ledgers. It has not run against a production estate from another vendor. Treat every number it prints as a statement about the evidence file, not about the system that produced it.
+
+## Licence
+
+Apache-2.0. See `LICENSE` and `NOTICE`. The DEMM paper is a third-party work under its own terms; `docs/references/README.md` records its source and digest.

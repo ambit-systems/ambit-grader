@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """Regressions for four defects found verifying against a captured ledger.
 
@@ -12,7 +12,7 @@ denominator, and certifying a corpus from a two-record chain inside it.
 from __future__ import annotations
 
 from ambit_grader import Property, Sufficiency, grade_records
-from ambit_grader.adapters.ambit_receipts import is_decision_event
+from ambit_grader.adapters.normalise import Normalised, is_decision_event, normalise
 from ambit_grader.joins import chain_integrity, principal_authority
 
 
@@ -258,10 +258,11 @@ def test_mixed_corpus_does_not_trigger_the_fallback():
 def test_receipt_payload_shape_does_not_crash_the_grader():
     """The engine's own raw receipt shape must grade, not raise.
 
-    `ambit-authority` emits `decision: "ALLOW"`; `ambit-authority-core` emits
-    `decision: {"outcome": "allow", ...}`. The grader crashed with a TypeError
-    on the second — its own vendor's current engine output — which is the worst
-    available failure for a tool whose pitch is reading evidence honestly.
+    The Ambit decision ledger emits `decision: "ALLOW"`; the Ambit engine's raw
+    receipt emits `decision: {"outcome": "allow", ...}`. The grader crashed
+    with a TypeError on the second — its own vendor's current engine output —
+    which is the worst available failure for a tool whose pitch is reading
+    evidence honestly.
     """
     payload_shape = {
         "actor": {"id": "agent-1"},
@@ -297,6 +298,17 @@ def test_unreadable_records_are_counted_not_raised():
     graded = grade_records("junk", [{"foo": 1}, {"bar": {"baz": 2}}])
     assert graded.unrecognised == 2
     assert "unrecognised" in graded.shapes
+
+
+def test_summary_names_shapes_and_the_skipped_count():
+    assert Normalised().summary() == "no records"
+    ledger = _decision(0, "ALLOW", "0" * 64, "h1")
+    approval = {"record_type": "approval", "approval_fingerprint": "fp-1"}
+    assert normalise([ledger, approval]).summary() == "1 ambit_approval, 1 ambit_ledger"
+    assert (
+        normalise([ledger, {"nothing": True}]).summary()
+        == "1 ambit_ledger, 1 unrecognised (skipped)"
+    )
 
 
 def test_mixed_shapes_are_reported_separately():

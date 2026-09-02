@@ -1,5 +1,5 @@
-# Copyright (c) 2026 Ambit Systems Pty Ltd. All rights reserved.
-# Proprietary and confidential. See LICENSE for terms.
+# Copyright (c) 2026 Ambit Systems Pty Ltd.
+# SPDX-License-Identifier: Apache-2.0
 
 """Aggregation of per-record and corpus verdicts into a grade.
 
@@ -28,8 +28,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from ambit_grader.adapters.ambit_receipts import is_decision_event
-from ambit_grader.adapters.normalise import normalise
+from ambit_grader.adapters.normalise import is_decision_event, normalise
 from ambit_grader.joins import CORPUS_CHECKS
 from ambit_grader.models import (
     AUTHORITY_SPINE,
@@ -130,7 +129,7 @@ def grade_records(source: str, records: list[dict[str, Any]]) -> Grade:
     # The eight classes are properties *of a decision event*. An Ambit ledger
     # interleaves approvals, consequence intents, outcomes and observatory
     # scores, which are fragments about decisions rather than decisions; on a
-    # captured demo ledger they are 48% of records. Scoring them as decision
+    # captured sample ledger they are 48% of records. Scoring them as decision
     # events systematically understates the estate. Corpus checks below still
     # see every record, because the joins live in exactly those other types.
     decision_events = [r for r in records if is_decision_event(r)] or records

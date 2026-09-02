@@ -12,8 +12,8 @@ business days and give an assessment with a remediation plan within ten.
 
 ## Supported versions
 
-The `main` branch is the only supported line. There are no external users on
-pinned releases yet, so fixes land on `main` rather than being backported.
+The latest release on PyPI and the `main` branch are the supported lines.
+Fixes land on `main` and ship in the next release. We do not backport.
 
 ## Supply-chain posture
 
@@ -22,8 +22,8 @@ surface is the Python standard library. This is a deliberate constraint, not an
 accident of scope: the grader is a trust object, and a tool that tells you what
 your evidence proves should not itself depend on code you have not audited.
 
-Adding a runtime dependency to this package is a doctrine-level decision, not a
-convenience.
+Adding a runtime dependency to this package is a design decision, not a
+convenience. Open an issue before you propose one.
 
 ## Handling untrusted input
 

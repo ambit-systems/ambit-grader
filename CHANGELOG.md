@@ -79,6 +79,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lines were split on every Unicode line terminator, so a valid JSON string
   containing U+2028 or U+0085 was rejected as malformed. Lines are now split
   on `\n` only.
+- JSONL ingestion now streams bounded regular files and rejects special files,
+  excessive file/line/record/structure sizes, duplicate keys, non-standard
+  numeric constants and finite-token overflow to non-finite floats.
+- Property and adapter checks now validate the semantic scalar type of names,
+  hashes, actions, resources, sequence values and modes instead of granting
+  credit through generic truthiness. Timestamps require a real RFC 3339 UTC
+  instant; OpenTelemetry's explicitly labelled Unix-nanosecond field remains
+  supported with bounded epoch validation.
+- Approval representations are reconciled before selection, so explicit
+  invalidity or disagreement between flat and nested approvers, identifiers,
+  fingerprints, or binding assertions cannot be bypassed.
+- Optional artifact statuses and delegation credential kinds are closed enums.
+  Unsupported states, signature states, and delegation kinds cannot establish
+  authority. Missing delegation validity remains non-authoritative.
+- Unsupported decision verdicts remain in authority accounting. Reused or
+  conflicting approval fingerprints are reported as conflicts rather than
+  silently overwritten or fanned out.
+- Foreign verdict aliases are reconciled rather than selected by precedence;
+  contradictory or malformed substantive claims now fail closed. Microsoft
+  AGT BOM fields are observed only when `inferred` is explicitly `false`.
+- Decision-event eligibility is stable per record across both completeness and
+  authority accounting: typed Ambit fragments remain join-only, while generic
+  and foreign action traces keep their denominator contribution in mixed
+  corpora even without a verdict.
+- Duplicate observed AGT BOM claims are reconciled without list-order
+  precedence; conflicting policy or approver values are quarantined. AGT's
+  evaluated-rule collection remains raw evidence and never becomes a scalar
+  matched-rule identity.
+- Conflicting native and foreign timestamp aliases now receive zero property
+  credit. Equivalent RFC 3339 and Unix-nanosecond spellings are compared as
+  nanosecond instants.
+- Human-readable reports escape untrusted terminal controls and now include
+  each stored architectural reason and recommended upstream action. JSON
+  output remains data-preserving.
 
 ## [0.1.0]
 

@@ -36,6 +36,12 @@ file as untrusted.
 - It performs no network I/O and spawns no subprocesses.
 - Malformed records are reported, not silently dropped. A grade computed over
   records the tool could not parse would be a false assurance.
+- Only regular files are admitted. Reads are incremental and bounded by file,
+  line, record, nesting and value-count limits.
+- JSON admission rejects duplicate object keys, non-standard numeric constants
+  and numeric overflow to non-finite values before grading.
+- Human-readable output escapes terminal controls, line separators, bidi
+  formatting and unpaired surrogates. Machine-readable JSON retains admitted data.
 
 If you can make the grader crash, hang, or consume unbounded memory on a crafted
 evidence file, that is a vulnerability and we want to hear about it.

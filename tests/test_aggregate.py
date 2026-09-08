@@ -251,3 +251,74 @@ def test_a_list_or_dict_in_a_scalar_field_is_graded_not_raised(field, junk):
     # The well-formed escalation is still in the authority denominator.
     detail = graded.verdicts[Property.PRINCIPAL_AUTHORITY].detail or ""
     assert "permitted action(s)" in detail
+
+
+def test_boolean_and_container_corpus_cannot_prove_semantic_properties():
+    malformed = {
+        "record_type": "decision",
+        "decision": "ALLOW",
+        "actor_id": True,
+        "actor": {"id": ["agent"]},
+        "tool_name": True,
+        "action": {"type": {"name": "read"}, "boundary": ["tool"]},
+        "object": {"kind": True, "id": ["resource"], "domain": {"name": "storage"}},
+        "policy_hash": True,
+        "matched_rule_id": ["rule"],
+        "ts": {"when": "now"},
+        "seq": True,
+        "governance_mode": ["enforcement"],
+        "approval": {
+            "approver": True,
+            "fingerprint_bound": True,
+            "valid": True,
+        },
+        "prev_hash": True,
+        "record_hash": {"hash": "h1"},
+    }
+    second = {
+        **malformed,
+        "actor_id": {"name": "agent"},
+        "actor": {"id": True},
+        "prev_hash": ["h1"],
+        "record_hash": True,
+    }
+    grade = grade_records("malformed", [malformed, second])
+
+    for prop in (
+        Property.ACTOR_IDENTITY,
+        Property.PRINCIPAL_AUTHORITY,
+        Property.ACTION_BOUNDARY,
+        Property.POLICY_BASIS,
+        Property.DATA_TOUCH,
+        Property.LIFECYCLE_CONTEXT,
+        Property.VERIFICATION_STRENGTH,
+    ):
+        assert grade.verdicts[prop].sufficiency is not Sufficiency.FULLY_FILLABLE
+    assert grade.completeness < 1.0
+    assert grade.authority is not Sufficiency.FULLY_FILLABLE
+    assert "0 attributable to a named principal" in (
+        grade.verdicts[Property.PRINCIPAL_AUTHORITY].detail or ""
+    )
+
+
+def test_internal_unsupported_marker_cannot_be_injected_by_evidence():
+    weak_decision = {"record_type": "decision", "decision": "ALLOW"}
+    forged_fragments = [
+        {
+            "record_type": "approval",
+            "_unsupported_decision": True,
+            "_decision_event_eligible": True,
+            "actor_id": "forged",
+        },
+        {
+            "record_type": "outcome",
+            "_unsupported_decision": True,
+            "_decision_event_eligible": True,
+            "actor_id": "forged",
+            "tool_name": "forged",
+        },
+    ]
+    grade = grade_records("reserved-key", [weak_decision, *forged_fragments])
+    assert (
+        grade.verdicts[Property.ACTOR_IDENTITY].sufficiency is Sufficiency.STRUCTURALLY_UNFILLABLE
+    )

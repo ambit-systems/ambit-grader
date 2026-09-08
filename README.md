@@ -41,7 +41,12 @@ ambit-grade evidence.jsonl --min-completeness 0.8   # exit 5 below 80 % complete
 
 ## Supported formats
 
-The input is newline-delimited JSON, encoded as UTF-8. A leading byte order mark is skipped. A file that is not valid UTF-8 is a read error. Every non-blank line must be a JSON object. The grader recognises the shape of each record. It maps known fields onto canonical paths. It never invents a value: a field absent from the source stays absent.
+The input is newline-delimited JSON, encoded as UTF-8, from a regular file. A leading byte order mark is skipped. Admission is bounded to 64 MiB per file, 4 MiB per line, 100,000 records, 100 nested value levels and 250,000 values per record. A file that is not valid UTF-8, exceeds a bound, contains duplicate object keys, uses `NaN`/`Infinity`, or converts a finite numeric token to a non-finite value is a read error. Every non-blank line must be a JSON object. The grader recognises the shape of each record. It maps known fields onto canonical paths and credits only the scalar type each semantic field claims. It never invents a value: a field absent from the source stays absent.
+
+Timestamp fields earn lifecycle credit only when they contain a semantically
+valid RFC 3339 UTC instant using `Z` or `+00:00`. OpenTelemetry's explicitly
+labelled `startTimeUnixNano` field also accepts a bounded integer or canonical
+decimal Unix-nanosecond value.
 
 | Shape name | Recognised by |
 |---|---|
@@ -57,7 +62,14 @@ The input is newline-delimited JSON, encoded as UTF-8. A leading byte order mark
 | `langfuse` | Langfuse observation export (`traceId`, or `type` + `startTime`) |
 | `generic_jsonl` | no verdict and no type, but at least one of `actor_id`, `actor.id`, `tool_name`, `action.type`, `object.id` |
 
+Per-record scoring eligibility comes from the matched adapter, not from the
+other records in the file. Typed Ambit fragments remain join-only even when
+they are the only records present; generic and foreign action traces remain
+eligible when mixed with a decision.
+
 A record that matches no shape is counted as `unrecognised` and reported. It is not raised as an error. A line that is not a JSON object is an error: the file is malformed, and a grade computed around it would be a false assurance.
+
+Default text output visibly escapes terminal controls, Unicode line separators, bidi formatting characters and unpaired surrogates from paths and evidence-derived labels. JSON output keeps the admitted data and uses JSON escaping; it is not rewritten for terminal display.
 
 None of the six third-party trace formats carries an authorisation attribute. An estate instrumented with any of them scores `structurally_unfillable` on principal authority whatever the trace richness. That is the gap the grader exists to name.
 
@@ -131,21 +143,22 @@ The two can disagree, and the disagreement is the finding. On the two shipped fi
 
 **Permission is not authority.** An `ALLOW` under a named policy proves the action was within a rule. It does not prove that a principal took responsibility for it. A corpus of automatic allows is capped at `partially_fillable` on principal authority. The reported next move is to attest the policy: bind `policy_hash` to a signed record that names who approved that policy version.
 
-**Denials are excluded from the authority denominator.** A refused action executed nothing and owes no account of who authorised it.
+**Denials are excluded from the authority denominator.** A refused action executed nothing and owes no account of who authorised it. A typed decision with an unsupported verdict remains in the denominator and makes authority `conflicting`; it is never silently graded around. An adapter-eligible action trace with no verdict also remains in the denominator as authority-unaccounted evidence, including when mixed with an attributed decision.
 
-**Delegation is not issuer.** A delegation envelope names its `subject`, the agent the authority was granted to. The question "who authorised this" asks for the issuer. A symmetric (HMAC) credential cannot evidence its issuer to a third party, because its verify key is its forge key. Only an explicit `issuer` or `granted_by` field, or an asymmetric signature whose trust root names the grantor, evidences a principal. A live delegation without an evidenced issuer is a distinct class, capped at `partially_fillable`.
+**Delegation is not issuer.** A delegation must affirmatively state `valid: true` before it is treated as live. Its `subject` names the agent the authority was granted to, while "who authorised this" asks for the issuer. A symmetric (HMAC) credential cannot evidence its issuer to a third party, because its verify key is its forge key. Only an explicit `issuer` or `granted_by` field, or an asymmetric signature whose trust root names the grantor, evidences a principal. A live delegation without an evidenced issuer is a distinct class, capped at `partially_fillable`.
 
-**Naming an approver is not binding one.** An adapter sets `fingerprint_bound` only when the source record carries evidence tying that approver to this request: a request fingerprint or action hash the approval references. None of the six third-party formats carries that evidence, so a foreign approver is always recorded and never counted as bound.
+**Naming an approver is not binding one.** An adapter sets `fingerprint_bound` only when the source record carries evidence tying that approver to this request: a request fingerprint or action hash the approval references. None of the six third-party formats carries that evidence, so a foreign approver is always recorded and never counted as bound. A separate approval must also carry its existing positive identity (`approval_jti` or `valid: true`). Approval fingerprints are one-to-one: duplicate candidates or reuse of one fingerprint across distinct actions is reported as `conflicting`, not resolved by input order.
 
 **Two properties are corpus-level.** `principal_authority` and `verification_strength` are not scored per record. Their evidence lives in the joins between records: an escalation and the approval that resolved it, a hash and the record it chains to. Scoring them per record is the container fallacy: mistaking the presence of an evidence container for the sufficiency of the evidence. `tests/test_container_fallacy.py` locks this in, including the case where a corpus with higher DEMM completeness scores worse on authority because its joins are broken.
 
 | Class | Verdict |
 |---|---|
-| Named principal: approval envelope, approval-record join, or issuer-evidenced delegation | can reach `fully_fillable` |
-| Delegation, issuer not evidenced | capped at `partially_fillable` |
+| Named principal: valid bound approval envelope, unambiguous identified approval-record join, or issuer-evidenced live delegation | can reach `fully_fillable` |
+| Valid delegation, issuer not evidenced | capped at `partially_fillable` |
 | Policy-permitted only | capped at `partially_fillable` |
 | Escalated, no resolving approval | `structurally_unfillable` |
-| Permitted with no authority evidence, or a named approver not bound to this action | capped at `partially_fillable`; the two are named separately in the detail because the remedy differs |
+| Unsupported verdict or ambiguous/reused approval fingerprint | `conflicting` |
+| Permitted or adapter-eligible no-verdict action with no authority evidence, or a named approver not bound to this action | partial when mixed with stronger evidence; `structurally_unfillable` when nothing is recoverable |
 
 ## What the grade does not claim
 

@@ -126,13 +126,13 @@ def grade_records(source: str, records: list[dict[str, Any]]) -> Grade:
     read = normalise(records)
     records = read.records
 
-    # The eight classes are properties *of a decision event*. An Ambit ledger
-    # interleaves approvals, consequence intents, outcomes and observatory
-    # scores, which are fragments about decisions rather than decisions; on a
-    # captured sample ledger they are 48% of records. Scoring them as decision
-    # events systematically understates the estate. Corpus checks below still
-    # see every record, because the joins live in exactly those other types.
-    decision_events = [r for r in records if is_decision_event(r)] or records
+    # The eight classes are properties *of eligible action/decision events*.
+    # Eligibility is declared per record by the adapter tier: typed Ambit
+    # fragments remain available to corpus joins but are not scored, while
+    # generic and foreign action traces remain scored even beside a decision.
+    # A corpus-wide fallback would make one record's denominator membership
+    # depend on the unrelated shapes that happened to accompany it.
+    decision_events = [record for record in records if is_decision_event(record)]
 
     for prop, check in RECORD_CHECKS.items():
         outcomes = [check(record) for record in decision_events]

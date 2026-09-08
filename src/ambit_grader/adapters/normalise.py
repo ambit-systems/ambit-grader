@@ -28,10 +28,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ambit_grader.adapters import foreign
-from ambit_grader.sufficiency import dig, interpretable
+from ambit_grader.sufficiency import dig, interpretable, is_identifier, is_text
 
 #: Canonical verdicts. Sources may spell them in any case.
 _VERDICTS = frozenset({"ALLOW", "DENY", "ESCALATE"})
+
+#: Reserved adapter output declaring whether a recognised record is scored as
+#: a decision event. Normalisation overwrites any source-supplied value.
+_DECISION_EVENT_ELIGIBLE = "_decision_event_eligible"
 
 #: Record types the adapter tier declares to be decision events.
 #:
@@ -57,9 +61,14 @@ def is_decision_event(record: dict[str, Any]) -> bool:
     Returns:
         True if the record is a decision event.
     """
+    eligible = record.get(_DECISION_EVENT_ELIGIBLE)
+    if isinstance(eligible, bool):
+        return eligible
+    if record.get("_unsupported_decision") is True:
+        return True
     record_type = record.get("record_type")
     if record_type is None:
-        return bool(record.get("decision"))
+        return isinstance(record.get("decision"), str)
     return isinstance(record_type, str) and record_type in DECISION_EVENT_TYPES
 
 
@@ -110,7 +119,7 @@ def _tool_name(record: dict[str, Any]) -> str | None:
         "evidence.provenance.raw.tool_name",
     ):
         value = dig(record, path)
-        if interpretable(value) and isinstance(value, str):
+        if is_text(value):
             return value
 
     raw = dig(record, "evidence.raw")
@@ -123,9 +132,10 @@ def _tool_name(record: dict[str, Any]) -> str | None:
                 # to read `operation` would report a tool name as missing while
                 # it sits in the record, which is a false finding rather than a
                 # strict one.
-                name = block.get("name") or block.get("tool_name") or block.get("operation")
-                if isinstance(name, str) and name:
-                    return name
+                for key in ("name", "tool_name", "operation"):
+                    name = block.get(key)
+                    if is_text(name):
+                        return name
     return None
 
 
@@ -159,7 +169,8 @@ def _shape_of(record: dict[str, Any]) -> tuple[str | None, foreign.Profile | Non
 
     if isinstance(record.get("decision"), str):
         return "ambit_ledger", None
-    if isinstance(record.get("decision"), dict) and dig(record, "decision.outcome") is not None:
+    decision = record.get("decision")
+    if isinstance(decision, dict) and "outcome" in decision:
         return "ambit_receipt_payload", None
     # Homegrown logs carry no verdict and no type, but are still evidence if
     # they say who did what. Recognised so foreign JSONL can be graded; the
@@ -190,23 +201,38 @@ def normalise_record(record: dict[str, Any]) -> dict[str, Any] | None:
     shape, profile = _shape_of(record)
     if shape is None:
         return None
-    return _apply(record, profile)
+    return _apply(record, profile, shape)
 
 
-def _apply(record: dict[str, Any], profile: foreign.Profile | None) -> dict[str, Any]:
+def _apply(record: dict[str, Any], profile: foreign.Profile | None, shape: str) -> dict[str, Any]:
     """Map a recognised record onto canonical paths."""
     out = profile.apply(record) if profile is not None else dict(record)
+    out[_DECISION_EVENT_ELIGIBLE] = (
+        profile.decision_event
+        if profile is not None
+        else shape in {"ambit_ledger", "ambit_receipt_payload", "generic_jsonl"}
+    )
+    if profile is None:
+        out.pop("_unsupported_decision", None)
+        out.pop("_conflicting_timestamp", None)
+        out.pop("_policy_confidence", None)
+    native_record = record if profile is None else {}
 
     if not isinstance(out.get("record_type"), str):
         out.pop("record_type", None)
 
-    verdict = _verdict(out) or _verdict(record)
+    verdict = _verdict(out)
+    if verdict is None and profile is None:
+        verdict = _verdict(record)
     if verdict is not None:
         out["decision"] = verdict
+        out.pop("_unsupported_decision", None)
     else:
-        # A verdict we could not read: drop it rather than leave a value where
-        # downstream code expects one of the canonical strings.
+        # Keep the event in every downstream denominator, while removing the
+        # malformed value from the canonical verdict slot.
         out.pop("decision", None)
+        if shape in {"ambit_ledger", "ambit_receipt_payload"}:
+            out["_unsupported_decision"] = True
 
     # Structured per-rule reasoning lives under `decision.reasons` in the
     # receipt-payload shape and at the top level in the ledger shape.
@@ -225,31 +251,31 @@ def _apply(record: dict[str, Any], profile: foreign.Profile | None) -> dict[str,
 
     # Hashes are top-level in the ledger and nested under evidence in the
     # payload. Lift only what is genuinely present.
-    for flat, nested_path in (
-        ("policy_hash", "evidence.hashes.policy_hash"),
-        ("ontology_hash", "evidence.hashes.ontology_hash"),
-        ("request_fingerprint", "evidence.hashes.request_fingerprint"),
+    for flat, nested_path, predicate in (
+        ("policy_hash", "evidence.hashes.policy_hash", is_text),
+        ("ontology_hash", "evidence.hashes.ontology_hash", is_text),
+        ("request_fingerprint", "evidence.hashes.request_fingerprint", is_identifier),
     ):
-        if not interpretable(out.get(flat)):
-            lifted = dig(record, nested_path)
-            if interpretable(lifted):
+        if not predicate(out.get(flat)):
+            lifted = dig(native_record, nested_path)
+            if predicate(lifted):
                 out[flat] = lifted
 
-    if not interpretable(out.get("actor_id")):
-        nested_actor = dig(record, "actor.id")
-        if interpretable(nested_actor):
+    if not is_identifier(out.get("actor_id")):
+        nested_actor = dig(native_record, "actor.id")
+        if is_identifier(nested_actor):
             out["actor_id"] = nested_actor
 
     # The engine records the invoked tool in naming provenance when it is not
     # promoted to a top-level field.
-    if not interpretable(out.get("tool_name")):
-        out["tool_name"] = _tool_name(record) or out.get("tool_name")
-        if not interpretable(out.get("tool_name")):
+    if not is_text(out.get("tool_name")):
+        out["tool_name"] = _tool_name(native_record) or out.get("tool_name")
+        if not is_text(out.get("tool_name")):
             out.pop("tool_name", None)
 
-    if not interpretable(out.get("matched_rule_id")):
-        lifted = dig(record, "evidence.naming.matched_rule_id")
-        if interpretable(lifted):
+    if not is_text(out.get("matched_rule_id")):
+        lifted = dig(native_record, "evidence.naming.matched_rule_id")
+        if is_text(lifted):
             out["matched_rule_id"] = lifted
 
     return out
@@ -274,6 +300,6 @@ def normalise(records: list[dict[str, Any]]) -> Normalised:
             unrecognised += 1
             continue
         shapes[shape] += 1
-        normalised.append(_apply(record, profile))
+        normalised.append(_apply(record, profile, shape))
 
     return Normalised(records=normalised, shapes=shapes, unrecognised=unrecognised)

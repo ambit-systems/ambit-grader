@@ -15,12 +15,32 @@ formula; the authority verdict is Ambit's own scoping and says so.
 from __future__ import annotations
 
 import json
+import unicodedata
 from typing import Any
 
 from ambit_grader.models import AUTHORITY_SPINE, Grade, Property
 
 _COLUMN = 24
 _LABEL = 30
+
+
+def terminal_safe(value: object) -> str:
+    """Render text without live controls, bidi formatting, or surrogates."""
+    escaped: list[str] = []
+    for character in str(value):
+        codepoint = ord(character)
+        if character == "\\":
+            escaped.append("\\\\")
+        elif unicodedata.category(character) in {"Cc", "Cf", "Cs", "Zl", "Zp"}:
+            if codepoint <= 0xFF:
+                escaped.append(f"\\x{codepoint:02x}")
+            elif codepoint <= 0xFFFF:
+                escaped.append(f"\\u{codepoint:04x}")
+            else:
+                escaped.append(f"\\U{codepoint:08x}")
+        else:
+            escaped.append(character)
+    return "".join(escaped)
 
 
 def headline(grade: Grade) -> str:
@@ -37,13 +57,14 @@ def render_text(grades: list[Grade]) -> str:
 
     lines: list[str] = []
     for grade in grades:
-        shapes = f" [{grade.shapes}]" if grade.shapes else ""
-        lines.append(f"{grade.source} — {grade.record_count} record(s){shapes}")
-        lines.append(f"  {headline(grade)}")
+        source = terminal_safe(grade.source)
+        shapes = f" [{terminal_safe(grade.shapes)}]" if grade.shapes else ""
+        lines.append(f"{source} — {grade.record_count} record(s){shapes}")
+        lines.append(f"  {terminal_safe(headline(grade))}")
         lines.append("")
 
     # The tail of a path is the distinguishing part; keep it.
-    columns = "".join(f"{g.source[-(_COLUMN - 1) :]:>{_COLUMN}}" for g in grades)
+    columns = "".join(f"{terminal_safe(g.source)[-(_COLUMN - 1) :]:>{_COLUMN}}" for g in grades)
     header = f"{'DEMM property class':<{_LABEL}}{columns}"
     lines.append(header)
     lines.append("-" * len(header))
@@ -51,6 +72,22 @@ def render_text(grades: list[Grade]) -> str:
         row = f"{prop.value:<{_LABEL}}"
         row += "".join(f"{g.verdicts[prop].sufficiency.value:>{_COLUMN}}" for g in grades)
         lines.append(row)
+    for grade in grades:
+        details = [
+            (prop, verdict)
+            for prop, verdict in grade.verdicts.items()
+            if verdict.reason is not None or verdict.recommendation is not None
+        ]
+        if not details:
+            continue
+        lines.append("")
+        lines.append(f"Gap details for {terminal_safe(grade.source)}:")
+        for prop, verdict in details:
+            reason = verdict.reason.value if verdict.reason is not None else "not recorded"
+            action = verdict.recommendation or "none"
+            lines.append(
+                f"  {prop.value}: reason={terminal_safe(reason)}; action={terminal_safe(action)}"
+            )
     lines.append("-" * len(header))
     lines.append(
         f"{'DEMM completeness (7 rows)':<{_LABEL}}"

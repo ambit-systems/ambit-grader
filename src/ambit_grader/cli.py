@@ -17,7 +17,7 @@ from pathlib import Path
 
 from ambit_grader.aggregate import grade_records
 from ambit_grader.jsonl import EvidenceReadError, load
-from ambit_grader.report import render_json, render_text
+from ambit_grader.report import render_json, render_text, terminal_safe
 
 EXIT_OK = 0
 """Every path graded and no completeness gate was breached."""
@@ -120,7 +120,7 @@ def run_grade(
             # stderr, never stdout: stdout carries the report, and with
             # --format json an error line there would corrupt the document
             # the caller is parsing.
-            print(f"error: {exc}", file=sys.stderr)
+            print(f"error: {terminal_safe(exc)}", file=sys.stderr)
             read_failed = True
             continue
         grades.append(grade_records(str(path), records))

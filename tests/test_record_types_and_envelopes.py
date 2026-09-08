@@ -54,6 +54,27 @@ def test_fragment_records_do_not_drag_decision_properties_down():
     assert graded.verdicts[Property.DATA_TOUCH].sufficiency is Sufficiency.FULLY_FILLABLE
 
 
+def test_rich_typed_fragment_alone_is_never_scored_as_a_decision_event():
+    fragment = {
+        "record_type": "outcome",
+        "actor_id": "agent-1",
+        "tool_name": "storage.write",
+        "action": {"type": "write", "boundary": "tool_execution"},
+        "object": {"kind": "file", "id": "result.txt", "domain": "filesystem"},
+        "ts": "2026-03-01T00:00:00Z",
+        "seq": 1,
+        "governance_mode": "enforcement",
+    }
+    graded = grade_records("fragment-only", [fragment])
+    for prop in (
+        Property.ACTOR_IDENTITY,
+        Property.ACTION_BOUNDARY,
+        Property.DATA_TOUCH,
+        Property.LIFECYCLE_CONTEXT,
+    ):
+        assert graded.verdicts[prop].sufficiency is Sufficiency.STRUCTURALLY_UNFILLABLE
+
+
 def test_nested_approval_envelope_resolves_authority():
     """Real receipts carry the join result inside `approval`, not at top level."""
     resolved = _decision(
@@ -245,14 +266,41 @@ def test_typeless_foreign_jsonl_falls_back_to_scoring_every_record():
     )
 
 
-def test_mixed_corpus_does_not_trigger_the_fallback():
-    """One typed decision event is enough to disable the fallback."""
+def test_typed_fragment_remains_ineligible_in_a_mixed_corpus():
     typed = _decision(0, "ALLOW", "0" * 64, "h1", policy_hash="9f2c41ab")
     fragment = {"record_type": "outcome", "seq": 1, "prev_hash": "h1", "record_hash": "h2"}
 
     graded = grade_records("mixed", [typed, fragment])
     # The fragment has no action; if it were scored the property would drop.
     assert graded.verdicts[Property.ACTION_BOUNDARY].sufficiency is Sufficiency.FULLY_FILLABLE
+
+
+def test_foreign_action_trace_keeps_its_denominator_place_in_mixed_corpus():
+    otel = {
+        "name": "execute_tool refund.issue",
+        "startTimeUnixNano": "1785148029563000000",
+        "attributes": {
+            "gen_ai.operation.name": "execute_tool",
+            "gen_ai.tool.name": "refund.issue",
+            "gen_ai.tool.call.id": "call-abc",
+            "gen_ai.agent.id": "agent-support",
+        },
+    }
+    agt = {
+        "decision": "ALLOW",
+        "policy_id": "policy-1",
+    }
+
+    otel_grade = grade_records("otel", [otel])
+    assert otel_grade.verdicts[Property.ACTOR_IDENTITY].sufficiency is Sufficiency.FULLY_FILLABLE
+
+    mixed = grade_records("mixed", [otel, agt])
+    actor = mixed.verdicts[Property.ACTOR_IDENTITY]
+    assert actor.sufficiency is Sufficiency.PARTIALLY_FILLABLE
+    assert actor.confidence == 0.5
+    action = mixed.verdicts[Property.ACTION_BOUNDARY]
+    assert action.sufficiency is Sufficiency.PARTIALLY_FILLABLE
+    assert action.confidence == 1 / 3
 
 
 def test_receipt_payload_shape_does_not_crash_the_grader():
@@ -330,10 +378,15 @@ def test_adapter_specific_tool_name_keys_are_all_read():
     """
     from ambit_grader.adapters.normalise import normalise_record
 
-    for adapter, block in (
-        ("http", {"name": "customer.read"}),
-        ("mcp", {"name": "customer.read"}),
-        ("a2a", {"operation": "message/send"}),
+    for adapter, block, expected in (
+        ("http", {"name": "customer.read"}, "customer.read"),
+        ("mcp", {"name": "customer.read"}, "customer.read"),
+        ("a2a", {"operation": "message/send"}, "message/send"),
+        (
+            "http",
+            {"name": {"invalid": True}, "tool_name": "customer.read"},
+            "customer.read",
+        ),
     ):
         record = {
             "record_type": "decision",
@@ -344,7 +397,7 @@ def test_adapter_specific_tool_name_keys_are_all_read():
         }
         mapped = normalise_record(record)
         assert mapped is not None
-        assert mapped.get("tool_name"), f"{adapter} tool name not recovered"
+        assert mapped.get("tool_name") == expected, f"{adapter} tool name not recovered"
 
 
 def test_a_missing_tool_name_is_still_reported_missing():

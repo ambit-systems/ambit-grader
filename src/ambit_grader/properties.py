@@ -15,7 +15,15 @@ from collections.abc import Callable
 from typing import Any
 
 from ambit_grader.models import Property, Sufficiency, UnfillableReason
-from ambit_grader.sufficiency import dig, interpretable
+from ambit_grader.sufficiency import (
+    bounded_confidence,
+    dig,
+    is_identifier,
+    is_sequence,
+    is_substantive,
+    is_text,
+    timestamp_instant,
+)
 
 #: Per-record check signature: a record in, a category and the fraction of the
 #: property's parts that were actually recoverable from that record.
@@ -37,9 +45,9 @@ def _from_ratio(present: int, required: int) -> tuple[Sufficiency, float]:
     return Sufficiency.PARTIALLY_FILLABLE, fraction
 
 
-def _count(record: dict[str, Any], *paths: str) -> int:
-    """Count how many of the given dotted paths hold interpretable values."""
-    return sum(1 for path in paths if interpretable(dig(record, path)))
+def _count(record: dict[str, Any], predicate: Callable[[Any], bool], *paths: str) -> int:
+    """Count paths whose values satisfy the field's semantic type."""
+    return sum(1 for path in paths if predicate(dig(record, path)))
 
 
 def actor_identity(record: dict[str, Any]) -> tuple[Sufficiency, float]:
@@ -51,14 +59,16 @@ def actor_identity(record: dict[str, Any]) -> tuple[Sufficiency, float]:
     """
     flat = dig(record, "actor_id")
     nested = dig(record, "actor.id")
-    if interpretable(flat) and interpretable(nested) and flat != nested:
+    flat_valid = is_identifier(flat)
+    nested_valid = is_identifier(nested)
+    if flat_valid and nested_valid and flat != nested:
         return Sufficiency.CONFLICTING, 0.0
-    return _from_ratio(1 if interpretable(flat) or interpretable(nested) else 0, 1)
+    return _from_ratio(1 if flat_valid or nested_valid else 0, 1)
 
 
 def action_boundary(record: dict[str, Any]) -> tuple[Sufficiency, float]:
     """Grade whether the action and the boundary it crossed are both recorded."""
-    return _from_ratio(_count(record, "action.boundary", "action.type", "tool_name"), 3)
+    return _from_ratio(_count(record, is_text, "action.boundary", "action.type", "tool_name"), 3)
 
 
 def policy_basis(record: dict[str, Any]) -> tuple[Sufficiency, float]:
@@ -69,25 +79,55 @@ def policy_basis(record: dict[str, Any]) -> tuple[Sufficiency, float]:
     """
     flat = dig(record, "policy_hash")
     nested = dig(record, "evidence.hashes.policy_hash")
-    if interpretable(flat) and interpretable(nested) and flat != nested:
+    flat_valid = is_text(flat)
+    nested_valid = is_text(nested)
+    if flat_valid and nested_valid and flat != nested:
         return Sufficiency.CONFLICTING, 0.0
-    rule = dig(record, "matched_rule_id") or dig(record, "evidence.naming.matched_rule_id")
-    present = (1 if interpretable(flat) or interpretable(nested) else 0) + (
-        1 if interpretable(rule) else 0
+    flat_rule = dig(record, "matched_rule_id")
+    nested_rule = dig(record, "evidence.naming.matched_rule_id")
+    flat_rule_valid = is_text(flat_rule)
+    nested_rule_valid = is_text(nested_rule)
+    if flat_rule_valid and nested_rule_valid and flat_rule != nested_rule:
+        return Sufficiency.CONFLICTING, 0.0
+    present = (1 if flat_valid or nested_valid else 0) + (
+        1 if flat_rule_valid or nested_rule_valid else 0
     )
-    return _from_ratio(present, 2)
+    category, fraction = _from_ratio(present, 2)
+    if flat_valid or nested_valid:
+        confidence = bounded_confidence(record.get("_policy_confidence", 1.0))
+        confidence = 0.0 if confidence is None else confidence
+        if confidence < 1.0:
+            return Sufficiency.PARTIALLY_FILLABLE, min(fraction, confidence)
+    return category, fraction
 
 
 def data_touch(record: dict[str, Any]) -> tuple[Sufficiency, float]:
     """Grade whether the object the action touched can be identified."""
-    return _from_ratio(_count(record, "object.kind", "object.id", "object.domain"), 3)
+    present = _count(record, is_text, "object.kind", "object.domain")
+    present += _count(record, is_identifier, "object.id")
+    return _from_ratio(present, 3)
 
 
 def lifecycle_context(record: dict[str, Any]) -> tuple[Sufficiency, float]:
     """Grade whether when, where in sequence, and under what mode are recorded."""
-    timed = interpretable(dig(record, "ts")) or interpretable(dig(record, "timestamp_utc"))
-    sequenced = dig(record, "seq") is not None
-    moded = interpretable(dig(record, "governance_mode")) or dig(record, "dry_run") is not None
+    if record.get("_conflicting_timestamp") is True:
+        return Sufficiency.CONFLICTING, 0.0
+    flat_value = dig(record, "ts")
+    nested_value = dig(record, "timestamp_utc")
+    flat_timestamp = timestamp_instant(flat_value)
+    nested_timestamp = timestamp_instant(nested_value)
+    malformed_beside_valid = (
+        flat_timestamp is not None and nested_timestamp is None and is_substantive(nested_value)
+    ) or (nested_timestamp is not None and flat_timestamp is None and is_substantive(flat_value))
+    if malformed_beside_valid or (
+        flat_timestamp is not None
+        and nested_timestamp is not None
+        and flat_timestamp != nested_timestamp
+    ):
+        return Sufficiency.CONFLICTING, 0.0
+    timed = flat_timestamp is not None or nested_timestamp is not None
+    sequenced = is_sequence(dig(record, "seq"))
+    moded = is_text(dig(record, "governance_mode")) or isinstance(dig(record, "dry_run"), bool)
     return _from_ratio(sum((timed, sequenced, moded)), 3)
 
 

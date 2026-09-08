@@ -6,12 +6,17 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-from ambit_grader import EvidenceReadError, load_jsonl
+import ambit_grader.jsonl as jsonl_module
+from ambit_grader import EvidenceReadError, grade_records, load_jsonl
 from ambit_grader.cli import EXIT_BELOW_THRESHOLD, EXIT_READ_ERROR, main
+from ambit_grader.report import render_json, render_text, terminal_safe
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SPARSE = FIXTURES / "sparse_records_complete_joins.jsonl"
@@ -82,6 +87,14 @@ def test_loader_splits_on_newline_only(tmp_path):
         load_jsonl(path)
     path.write_text('{"reason": "a\u2028b"}\r\n{"reason": "c\u0085d"}\n', encoding="utf-8")
     assert load_jsonl(path) == [{"reason": "a\u2028b"}, {"reason": "c\u0085d"}]
+
+
+@pytest.mark.parametrize("non_json_whitespace", ["\u2028", "\u0085", "\u00a0"])
+def test_loader_does_not_skip_non_json_unicode_whitespace(tmp_path, non_json_whitespace):
+    path = tmp_path / "unicode-whitespace.jsonl"
+    path.write_text('{"a":1}\n' + non_json_whitespace + "\n", encoding="utf-8")
+    with pytest.raises(EvidenceReadError, match=r":2 is not valid JSON"):
+        load_jsonl(path)
 
 
 def test_cli_text_output(capsys):
@@ -228,3 +241,242 @@ def test_cli_survives_hostile_json_values(tmp_path, capsys):
     err = capsys.readouterr().err
     assert f"error: {deep}:1 is not valid JSON" in err
     assert f"error: {huge}:1 is not valid JSON" in err
+
+
+def test_loader_enforces_file_line_record_and_structure_limits(tmp_path, monkeypatch):
+    exact = tmp_path / "exact.jsonl"
+    payload = b'{"a":1}\n'
+    exact.write_bytes(payload)
+    monkeypatch.setattr(jsonl_module, "MAX_FILE_BYTES", len(payload))
+    monkeypatch.setattr(jsonl_module, "MAX_LINE_BYTES", len(payload) - 1)
+    assert load_jsonl(exact) == [{"a": 1}]
+
+    oversized = tmp_path / "oversized.jsonl"
+    with oversized.open("wb") as stream:
+        stream.truncate(len(payload) + 1)
+    with pytest.raises(EvidenceReadError, match="file exceeds"):
+        load_jsonl(oversized)
+
+    monkeypatch.setattr(jsonl_module, "MAX_FILE_BYTES", 1024)
+    long_line = tmp_path / "long.jsonl"
+    long_line.write_bytes(b'{"value":10}\n')
+    monkeypatch.setattr(jsonl_module, "MAX_LINE_BYTES", 8)
+    with pytest.raises(EvidenceReadError, match="line limit"):
+        load_jsonl(long_line)
+
+    monkeypatch.setattr(jsonl_module, "MAX_LINE_BYTES", 1024)
+    monkeypatch.setattr(jsonl_module, "MAX_RECORDS", 1)
+    two = tmp_path / "two.jsonl"
+    two.write_bytes(b'{"a":1}\n{"b":2}\n')
+    with pytest.raises(EvidenceReadError, match="record limit"):
+        load_jsonl(two)
+
+    monkeypatch.setattr(jsonl_module, "MAX_RECORDS", 10)
+    monkeypatch.setattr(jsonl_module, "MAX_JSON_DEPTH", 2)
+    nested = tmp_path / "nested.jsonl"
+    nested.write_bytes(b'{"a":{"b":1}}\n')
+    with pytest.raises(EvidenceReadError, match="nesting depth"):
+        load_jsonl(nested)
+
+    monkeypatch.setattr(jsonl_module, "MAX_JSON_DEPTH", 100)
+    monkeypatch.setattr(jsonl_module, "MAX_JSON_VALUES", 2)
+    wide = tmp_path / "wide.jsonl"
+    wide.write_bytes(b'{"a":1,"b":2}\n')
+    with pytest.raises(EvidenceReadError, match="value count"):
+        load_jsonl(wide)
+
+
+def test_loader_rejects_fifo_promptly(tmp_path):
+    fifo = tmp_path / "evidence.fifo"
+    os.mkfifo(fifo)
+    script = (
+        "from ambit_grader import EvidenceReadError, load_jsonl\n"
+        f"p = {str(fifo)!r}\n"
+        "try:\n"
+        "    load_jsonl(p)\n"
+        "except EvidenceReadError:\n"
+        "    raise SystemExit(1)\n"
+        "raise SystemExit(0)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).parents[1],
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[1] / "src")},
+        timeout=2,
+        check=False,
+    )
+    assert result.returncode == EXIT_READ_ERROR
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["NaN", "Infinity", "-Infinity", "1e400", '{"nested":NaN}'],
+)
+def test_loader_and_json_cli_reject_non_finite_numbers(tmp_path, capsys, value):
+    path = tmp_path / "non-finite.jsonl"
+    path.write_text(f'{{"value":{value}}}\n', encoding="utf-8")
+    with pytest.raises(EvidenceReadError, match=r":1 is not valid JSON"):
+        load_jsonl(path)
+    assert main([str(path), "--format", "json"]) == EXIT_READ_ERROR
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == []
+    assert f"{path}:1" in captured.err
+
+
+def test_loader_rejects_duplicate_keys_at_every_depth(tmp_path):
+    path = tmp_path / "duplicate.jsonl"
+    path.write_text('{"outer":{"a":1,"a":2}}\n', encoding="utf-8")
+    with pytest.raises(EvidenceReadError, match="duplicate object key"):
+        load_jsonl(path)
+
+
+def test_text_output_escapes_untrusted_controls_and_surrogates():
+    record = {
+        "record_type": "outcome\x1b]52;c;Zm9yZ2Vk\x07\u2028\u202e\ud800",
+        "actor_id": "a",
+    }
+    grade = grade_records("source\nname\u202e", [record])
+    text = render_text([grade])
+    assert "\x1b" not in text
+    assert "\nname" not in text
+    assert "\u202e" not in text
+    assert "\u2028" not in text
+    assert "\ud800" not in text
+    assert "\\x1b" in text
+    assert "\\x0a" in text
+    assert "\\u202e" in text
+    assert "\\u2028" in text
+    assert "\\ud800" in text
+    assert terminal_safe("\x1b") == "\\x1b"
+    assert terminal_safe("\\x1b") == "\\\\x1b"
+    text.encode("utf-8", errors="strict")
+
+    machine = json.loads(render_json([grade]))
+    assert machine[0]["source"] == "source\nname\u202e"
+    assert "\ud800" in machine[0]["shapes"]
+
+
+def test_cli_stderr_escapes_control_characters_in_paths(tmp_path, capsys):
+    path = tmp_path / "bad\n\x1b[31m.jsonl"
+    path.write_text("{not json}\n", encoding="utf-8")
+    assert main([str(path)]) == EXIT_READ_ERROR
+    error = capsys.readouterr().err
+    assert "\x1b" not in error
+    assert str(path) not in error
+    assert "\\x0a" in error
+    assert "\\x1b" in error
+
+
+def test_text_report_includes_each_stored_reason_and_action():
+    grade = grade_records(
+        "gaps",
+        [{"record_type": "decision", "decision": "ESCALATE", "actor_id": "agent"}],
+    )
+    text = render_text([grade])
+    assert (
+        "actor_identity: reason=not recorded; "
+        "action=give the 1 permitted action(s) an authority basis"
+    ) not in text
+    assert (
+        "action_boundary: reason=evidence_never_persisted; "
+        "action=emit action.type and action.boundary alongside tool_name"
+    ) in text
+    assert (
+        "principal_authority: reason=cross_stack_boundary; "
+        "action=link the 1 unresolved escalation(s) to an approval record"
+    ) in text
+
+
+def test_high_completeness_gate_rejects_semantically_malformed_evidence(tmp_path, capsys):
+    path = tmp_path / "malformed-types.jsonl"
+    record = {
+        "record_type": "decision",
+        "decision": "ALLOW",
+        "actor_id": True,
+        "tool_name": True,
+        "action": {"type": True, "boundary": True},
+        "object": {"kind": True, "id": True, "domain": True},
+        "policy_hash": True,
+        "matched_rule_id": True,
+        "ts": True,
+        "seq": True,
+        "governance_mode": True,
+    }
+    path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    assert main([str(path), "--min-completeness", "0.99"]) == EXIT_BELOW_THRESHOLD
+    capsys.readouterr()
+
+
+def test_malformed_timestamp_cannot_raise_completeness_past_a_gate(tmp_path, capsys):
+    record = {
+        "record_type": "decision",
+        "decision": "ALLOW",
+        "actor_id": "agent-1",
+        "tool_name": "read",
+        "action": {"type": "read", "boundary": "tool_execution"},
+        "object": {"kind": "file", "id": "/tmp/input", "domain": "filesystem"},
+        "policy_hash": "policy-1",
+        "matched_rule_id": "rule-1",
+        "ts": "not-a-time",
+        "seq": 0,
+        "governance_mode": "enforcement",
+        "approval": {
+            "approver": "alice",
+            "fingerprint_bound": True,
+            "valid": True,
+        },
+    }
+    valid_record = {**record, "ts": "2026-01-01T00:00:00Z"}
+    invalid_score = grade_records("invalid", [record]).completeness
+    valid_score = grade_records("valid", [valid_record]).completeness
+    assert invalid_score < valid_score
+
+    path = tmp_path / "malformed-timestamp.jsonl"
+    path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    threshold = (invalid_score + valid_score) / 2
+    assert main([str(path), "--min-completeness", str(threshold)]) == EXIT_BELOW_THRESHOLD
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize(
+    "conflict",
+    [
+        {
+            "matched_rule_id": "rule-flat",
+            "evidence": {"naming": {"matched_rule_id": "rule-nested"}},
+        },
+        {
+            "ts": "2026-01-01T00:00:00Z",
+            "timestamp_utc": "2026-01-01T00:00:01+00:00",
+        },
+    ],
+)
+def test_semantic_alias_conflicts_cannot_raise_completeness_past_gate(tmp_path, capsys, conflict):
+    valid_record = {
+        "record_type": "decision",
+        "decision": "ALLOW",
+        "actor_id": "agent-1",
+        "tool_name": "read",
+        "action": {"type": "read", "boundary": "tool_execution"},
+        "object": {"kind": "file", "id": "/tmp/input", "domain": "filesystem"},
+        "policy_hash": "policy-1",
+        "matched_rule_id": "rule-1",
+        "ts": "2026-01-01T00:00:00Z",
+        "seq": 0,
+        "governance_mode": "enforcement",
+        "approval": {
+            "approver": "alice",
+            "fingerprint_bound": True,
+            "valid": True,
+        },
+    }
+    conflicted_record = {**valid_record, **conflict}
+    valid_score = grade_records("valid", [valid_record]).completeness
+    conflicted_score = grade_records("conflicting", [conflicted_record]).completeness
+    assert conflicted_score < valid_score
+
+    path = tmp_path / "conflicting-aliases.jsonl"
+    path.write_text(json.dumps(conflicted_record) + "\n", encoding="utf-8")
+    threshold = (conflicted_score + valid_score) / 2
+    assert main([str(path), "--min-completeness", str(threshold)]) == EXIT_BELOW_THRESHOLD
+    capsys.readouterr()

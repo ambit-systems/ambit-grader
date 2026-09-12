@@ -14,9 +14,10 @@ with weights fully_fillable 1.0, opaque 1.0, partially_fillable 0.5 (the
 uncalibrated v0.1.0 default confidence), structurally_unfillable 0.0. It is
 faithful to the published formula and nothing Ambit authored sits inside it.
 
-**The Ambit authority verdict** is the weakest of the three properties Ambit's
-governance question actually tests. It is reported separately and labelled as
-Ambit's, never blended into completeness.
+**The Ambit Authority verdict** is the weakest of the three properties a
+governance question tests. Ambit Authority poses that question and is the
+named source of the verdict, which is reported separately and never blended
+into completeness.
 
 No maturity level is derived. DEMM §3.7 levels describe the evidence *regime* —
 manual on challenge, automated by design, exercised against a question battery,
@@ -115,7 +116,7 @@ def grade_records(source: str, records: list[dict[str, Any]]) -> Grade:
 
     Returns:
         The grade, carrying the per-property table, DEMM completeness over the
-        seven implementation rows, and Ambit's separate authority verdict.
+        seven implementation rows, and the separate Ambit Authority verdict.
     """
     verdicts: dict[Property, PropertyVerdict] = {}
 

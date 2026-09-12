@@ -110,7 +110,7 @@ def test_cli_text_output(capsys):
     assert authority.split() == ["principal_authority", "fully_fillable", "structurally_unfillable"]
     completeness = next(line for line in out if line.startswith("DEMM completeness"))
     assert completeness.split()[-2:] == ["57.1%", "78.6%"]
-    verdict = next(line for line in out if line.startswith("Ambit authority verdict"))
+    verdict = next(line for line in out if line.startswith("Ambit Authority verdict"))
     assert verdict.split()[-2:] == ["partially_fillable", "structurally_unfillable"]
 
 

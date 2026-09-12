@@ -11,6 +11,6 @@ Invariants:
 - No runtime dependency. The supply-chain surface is the Python standard library.
 - No network I/O, no subprocess, nothing executed from evidence.
 - Adapters map fields. They never invent a value.
-- DEMM completeness and the Ambit authority verdict are reported separately. Never blend them.
+- DEMM completeness and the Ambit Authority verdict are reported separately. Never blend them.
 
 Verify with `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`, `uv run pytest -q`.

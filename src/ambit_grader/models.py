@@ -9,8 +9,9 @@ Vocabulary follows the Decision Evidence Maturity Model (DEMM, arXiv
 * **DEMM reconstruction completeness** (§3.5) — a weighted average over the
   seven implementation rows, faithful to the published formula and comparable
   to any other DEMM implementation. Nothing Ambit authored is inside it.
-* **The Ambit authority verdict** — Ambit's own narrower reading of whether a
-  permitted action can be traced to a principal. Labelled as Ambit's.
+* **The Ambit Authority verdict** — the narrower reading Ambit Authority
+  takes of whether a permitted action can be traced to a principal. Ambit
+  Authority is the named source.
 
 What is deliberately *not* computed is a DEMM maturity level. §3.7 defines the
 five levels as descriptions of the evidence **regime** — whether reconstruction
@@ -140,8 +141,9 @@ IMPLEMENTATION_ROWS: tuple[tuple[str, tuple[Property, ...]], ...] = (
 #: |P| in the completeness formula.
 ROW_COUNT = len(IMPLEMENTATION_ROWS)
 
-#: The properties Ambit's own authority verdict reads. This is Ambit's
-#: scoping, not a DEMM level, and it is reported separately from completeness.
+#: The properties the Ambit Authority verdict reads. Ambit Authority defines
+#: this scope; it is not a DEMM level, and it is reported separately from
+#: completeness.
 AUTHORITY_SPINE: tuple[Property, ...] = (
     Property.PRINCIPAL_AUTHORITY,
     Property.ACTION_BOUNDARY,
@@ -209,8 +211,8 @@ class Grade:
         verdicts: Per-property verdicts over the eight conceptual classes.
         completeness: DEMM §3.5 reconstruction completeness over the seven
             implementation rows, in [0, 1].
-        authority: Ambit's own verdict on whether permitted actions can be
-            traced to a principal. Not a DEMM output.
+        authority: The Ambit Authority verdict on whether permitted actions
+            can be traced to a principal. Not a DEMM output.
         shapes: What was read, by shape, including anything skipped as
             unrecognised.
         unrecognised: Records that parsed as JSON but matched no known
@@ -253,7 +255,7 @@ class Grade:
 
         DEMM's own recommendation tensor ranks nothing — it emits one
         recommendation per unfilled property and leaves prioritisation to the
-        reader — so the ordering here is Ambit's.
+        reader — so Ambit Authority sets the ordering here.
         """
         candidates = sorted(
             (self.verdicts[p] for p in AUTHORITY_SPINE if p in self.verdicts),

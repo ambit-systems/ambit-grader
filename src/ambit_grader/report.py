@@ -9,7 +9,8 @@ people, and a ranked list of gaps is what they ignore.
 
 The two aggregates are always printed as two, and always labelled. DEMM
 completeness is comparable to any other implementation of the published
-formula; the authority verdict is Ambit's own scoping and says so.
+formula. Ambit Authority defines the scope of the authority verdict; DEMM
+does not.
 """
 
 from __future__ import annotations
@@ -94,7 +95,7 @@ def render_text(grades: list[Grade]) -> str:
         + "".join(f"{g.completeness:>{_COLUMN}.1%}" for g in grades)
     )
     lines.append(
-        f"{'Ambit authority verdict':<{_LABEL}}"
+        f"{'Ambit Authority verdict':<{_LABEL}}"
         + "".join(f"{g.authority.value:>{_COLUMN}}" for g in grades)
     )
     lines.append("")
@@ -107,11 +108,11 @@ def render_text(grades: list[Grade]) -> str:
         "across runs of this tool, not an absolute score."
     )
     lines.append(
-        "The Ambit authority verdict is the weakest of "
+        "The Ambit Authority verdict is the weakest of "
         + ", ".join(p.value for p in AUTHORITY_SPINE)
-        + ". It is Ambit's scoping, not a DEMM output, and no DEMM maturity level is "
-        "derived here — DEMM levels describe the evidence regime, which a static file "
-        "does not reveal."
+        + ". Ambit Authority defines this scope, not DEMM, and no DEMM maturity level "
+        "is derived here — DEMM levels describe the evidence regime, which a static "
+        "file does not reveal."
     )
     return "\n".join(lines) + "\n"
 

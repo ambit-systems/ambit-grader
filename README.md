@@ -10,7 +10,7 @@ Give it a JSONL evidence file. It returns three things, in this order:
 
 1. **One sentence you can act on.** Example from a shipped fixture: `2 permitted action(s): 0 attributable to a named principal, 0 under a delegation whose issuer is not evidenced, 1 policy-permitted only, 1 escalated without a resolving approval, 0 naming an approver not bound to this action, 0 with no authority evidence at all (1 denial(s) excluded). Next: link the 1 unresolved escalation(s) to an approval record carrying a named approver.`
 2. **A property table.** One row for each of the eight DEMM property classes. Each row carries a fillability category. An unfillable row carries an architectural reason and the upstream change that would close the gap.
-3. **Two aggregates, never blended.** DEMM reconstruction completeness, and Ambit's own authority verdict.
+3. **Two aggregates, never blended.** DEMM reconstruction completeness, and the Ambit Authority verdict.
 
 ## What it does not do
 
@@ -86,7 +86,7 @@ Errors go to stderr. The report goes to stdout, so `--format json` output stays 
 
 ## Output
 
-Text output (default): one header and one headline sentence per file, then a table with one column per file. The table has eight property rows, a `DEMM completeness (7 rows)` row and an `Ambit authority verdict` row. Two fixed notes follow that explain the two aggregates.
+Text output (default): one header and one headline sentence per file, then a table with one column per file. The table has eight property rows, a `DEMM completeness (7 rows)` row and an `Ambit Authority verdict` row. Two fixed notes follow that explain the two aggregates.
 
 JSON output (`--format json`): a list with one object per file.
 
@@ -133,7 +133,7 @@ Ambit did not write the measure. A yardstick Ambit authored could be shaped to f
 Two outputs are reported, and they are never blended:
 
 - **DEMM reconstruction completeness.** The §3.5 weighted average over the seven v0.1.0 implementation rows. Comparable to any other implementation of the published formula.
-- **The Ambit authority verdict.** The weakest of `principal_authority`, `action_boundary` and `verification_strength`. This is Ambit's scoping and is labelled as such.
+- **The Ambit Authority verdict.** The weakest of `principal_authority`, `action_boundary` and `verification_strength`. Ambit Authority defines this scope; it is not a DEMM output.
 
 The two can disagree, and the disagreement is the finding. On the two shipped fixtures, `complete_records_broken_joins.jsonl` scores higher DEMM completeness than `sparse_records_complete_joins.jsonl` (78.6 % against 57.1 %) and a worse authority verdict (`structurally_unfillable` against `partially_fillable`). It carries an escalation that nobody approved. One blended number would hide that.
 

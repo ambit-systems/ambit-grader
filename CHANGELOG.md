@@ -5,6 +5,14 @@ All notable changes to ambit-grader are recorded in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The report label `Ambit authority verdict` reads `Ambit Authority verdict`.
+  README, AGENTS.md and the module docstrings now name Ambit Authority
+  instead of using a possessive form of the company name.
+
 ## [0.2.0] — public release under Apache-2.0
 
 ### Changed

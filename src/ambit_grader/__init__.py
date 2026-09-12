@@ -12,10 +12,11 @@ Public API, the names in ``__all__``:
     print(render_text([grade]))
 
 Two outputs, never blended: DEMM reconstruction completeness (3.5) over the
-seven v0.1.0 implementation rows, faithful to the published formula; and
-Ambit's own authority verdict over the three properties its governance
-question tests. No DEMM maturity level is derived — 3.7 levels describe the
-evidence regime, not the contents of a file.
+seven v0.1.0 implementation rows, faithful to the published formula; and the
+Ambit Authority verdict. Ambit Authority asks a governance question that
+tests three properties, and the verdict reports the weakest of them. No DEMM
+maturity level is derived — 3.7 levels describe the evidence regime, not the
+contents of a file.
 """
 
 from ambit_grader.aggregate import grade_records

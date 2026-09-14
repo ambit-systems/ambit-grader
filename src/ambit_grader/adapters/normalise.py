@@ -204,6 +204,56 @@ def normalise_record(record: dict[str, Any]) -> dict[str, Any] | None:
     return _apply(record, profile, shape)
 
 
+def _lift_decision_reasons(out: dict[str, Any], record: dict[str, Any]) -> None:
+    """Lift per-rule reasoning from ``decision.reasons`` when no usable top-level copy exists."""
+    # Structured per-rule reasoning lives under `decision.reasons` in the
+    # receipt-payload shape and at the top level in the ledger shape.
+    if not interpretable(out.get("decision_reasons")):
+        nested = dig(record, "decision.reasons")
+        if isinstance(nested, list) and nested:
+            out["decision_reasons"] = [
+                {
+                    "rule_id": entry.get("rule_id"),
+                    "outcome": entry.get("result", entry.get("outcome")),
+                    "detail": entry.get("details", entry.get("detail")),
+                }
+                for entry in nested
+                if isinstance(entry, dict)
+            ]
+
+
+def _lift_native_fields(out: dict[str, Any], native_record: dict[str, Any]) -> None:
+    """Lift hashes, actor, tool name and matched rule from their nested native paths."""
+    # Hashes are top-level in the ledger and nested under evidence in the
+    # payload. Lift only what is genuinely present.
+    for flat, nested_path, predicate in (
+        ("policy_hash", "evidence.hashes.policy_hash", is_text),
+        ("ontology_hash", "evidence.hashes.ontology_hash", is_text),
+        ("request_fingerprint", "evidence.hashes.request_fingerprint", is_identifier),
+    ):
+        if not predicate(out.get(flat)):
+            lifted = dig(native_record, nested_path)
+            if predicate(lifted):
+                out[flat] = lifted
+
+    if not is_identifier(out.get("actor_id")):
+        nested_actor = dig(native_record, "actor.id")
+        if is_identifier(nested_actor):
+            out["actor_id"] = nested_actor
+
+    # The engine records the invoked tool in naming provenance when it is not
+    # promoted to a top-level field.
+    if not is_text(out.get("tool_name")):
+        out["tool_name"] = _tool_name(native_record) or out.get("tool_name")
+        if not is_text(out.get("tool_name")):
+            out.pop("tool_name", None)
+
+    if not is_text(out.get("matched_rule_id")):
+        lifted = dig(native_record, "evidence.naming.matched_rule_id")
+        if is_text(lifted):
+            out["matched_rule_id"] = lifted
+
+
 def _apply(record: dict[str, Any], profile: foreign.Profile | None, shape: str) -> dict[str, Any]:
     """Map a recognised record onto canonical paths."""
     out = profile.apply(record) if profile is not None else dict(record)
@@ -234,50 +284,8 @@ def _apply(record: dict[str, Any], profile: foreign.Profile | None, shape: str) 
         if shape in {"ambit_ledger", "ambit_receipt_payload"}:
             out["_unsupported_decision"] = True
 
-    # Structured per-rule reasoning lives under `decision.reasons` in the
-    # receipt-payload shape and at the top level in the ledger shape.
-    if not interpretable(out.get("decision_reasons")):
-        nested = dig(record, "decision.reasons")
-        if isinstance(nested, list) and nested:
-            out["decision_reasons"] = [
-                {
-                    "rule_id": entry.get("rule_id"),
-                    "outcome": entry.get("result", entry.get("outcome")),
-                    "detail": entry.get("details", entry.get("detail")),
-                }
-                for entry in nested
-                if isinstance(entry, dict)
-            ]
-
-    # Hashes are top-level in the ledger and nested under evidence in the
-    # payload. Lift only what is genuinely present.
-    for flat, nested_path, predicate in (
-        ("policy_hash", "evidence.hashes.policy_hash", is_text),
-        ("ontology_hash", "evidence.hashes.ontology_hash", is_text),
-        ("request_fingerprint", "evidence.hashes.request_fingerprint", is_identifier),
-    ):
-        if not predicate(out.get(flat)):
-            lifted = dig(native_record, nested_path)
-            if predicate(lifted):
-                out[flat] = lifted
-
-    if not is_identifier(out.get("actor_id")):
-        nested_actor = dig(native_record, "actor.id")
-        if is_identifier(nested_actor):
-            out["actor_id"] = nested_actor
-
-    # The engine records the invoked tool in naming provenance when it is not
-    # promoted to a top-level field.
-    if not is_text(out.get("tool_name")):
-        out["tool_name"] = _tool_name(native_record) or out.get("tool_name")
-        if not is_text(out.get("tool_name")):
-            out.pop("tool_name", None)
-
-    if not is_text(out.get("matched_rule_id")):
-        lifted = dig(native_record, "evidence.naming.matched_rule_id")
-        if is_text(lifted):
-            out["matched_rule_id"] = lifted
-
+    _lift_decision_reasons(out, record)
+    _lift_native_fields(out, native_record)
     return out
 
 

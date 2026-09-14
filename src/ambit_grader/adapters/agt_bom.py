@@ -128,9 +128,11 @@ def expand_agt_bom_fields(record: dict[str, Any]) -> dict[str, Any]:
     # delegation-as-authority-artifact independently and both recorded the
     # delegate rather than the grantor.
     #
-    # Mapped to a delegation envelope so the ordinary rule applies unchanged.
+    # Mapped to a delegation envelope that records the lineage in Ambit's shape.
     # Without an affirmative validity assertion this remains descriptive
-    # lineage, not evidence of a live grant.
+    # lineage, not evidence of a live grant. It does not reach the authority
+    # join: the AGT profile does not map delegation, so Profile.apply removes
+    # the envelope with the other canonical authority claims.
     #
     # Only when AGT marks it observed. As shipped, AGT sets inferred=True on
     # this field, so on real AGT output this never fires — its own flag says

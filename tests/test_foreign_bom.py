@@ -674,10 +674,18 @@ def test_an_observed_delegation_chain_without_validity_is_not_credited():
             },
         ],
     }
+    from ambit_grader.adapters.normalise import normalise_record
+
     graded = grade_records("agt-observed-chain", [observed_chain])
     verdict = graded.verdicts[Property.PRINCIPAL_AUTHORITY]
     assert verdict.sufficiency is Sufficiency.STRUCTURALLY_UNFILLABLE
     assert "0 under a delegation whose issuer is not evidenced" in (verdict.detail or "")
+    # The expansion builds a delegation envelope from the observed chain, but the
+    # AGT profile does not map delegation, so Profile.apply removes the envelope
+    # with the other canonical authority claims before the authority join runs.
+    mapped = normalise_record(observed_chain)
+    assert mapped is not None
+    assert "delegation" not in mapped
 
 
 def test_agt_chain_expansion_does_not_claim_a_validity_the_source_never_gave():
@@ -689,9 +697,11 @@ def test_agt_chain_expansion_does_not_claim_a_validity_the_source_never_gave():
     source never gave: the same defect that let a bare approver name read as a
     bound approval, in the same file.
 
-    It remains inert because :func:`joins._delegation_is_live` requires
-    ``valid is True``. Synthesising that flag here would let the adapter grant
-    authority the source never asserted.
+    The envelope does not reach the authority join today: ``Profile.apply``
+    removes ``delegation`` with the other canonical authority claims, because
+    the AGT profile does not map it. Keeping ``valid`` out still matters:
+    :func:`joins._delegation_is_live` requires ``valid is True``, so a profile
+    that did map delegation could not read this envelope as a live grant.
     """
     expanded = foreign.expand_agt_bom_fields(
         {

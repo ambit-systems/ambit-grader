@@ -51,6 +51,48 @@ def headline(grade: Grade) -> str:
     return f"{detail}. Next: {grade.next_move()}."
 
 
+def _gap_detail_lines(grade: Grade) -> list[str]:
+    """Return the gap-detail lines for one grade, or no lines when it has no gap."""
+    details = [
+        (prop, verdict)
+        for prop, verdict in grade.verdicts.items()
+        if verdict.reason is not None or verdict.recommendation is not None
+    ]
+    if not details:
+        return []
+    lines: list[str] = []
+    lines.append("")
+    lines.append(f"Gap details for {terminal_safe(grade.source)}:")
+    for prop, verdict in details:
+        reason = verdict.reason.value if verdict.reason is not None else "not recorded"
+        action = verdict.recommendation or "none"
+        lines.append(
+            f"  {prop.value}: reason={terminal_safe(reason)}; action={terminal_safe(action)}"
+        )
+    return lines
+
+
+def _aggregate_notes() -> list[str]:
+    """Return the two fixed notes that explain the two aggregates."""
+    notes: list[str] = []
+    notes.append(
+        "DEMM completeness is the 3.5 weighted average over the seven v0.1.0 "
+        "implementation rows. A partially-fillable property carries its own 3.5 "
+        "confidence — the share of cases it is actually fillable for — rather than "
+        "the reference implementation's flat 0.5 default, which the paper states is "
+        "uncalibrated. Completeness is therefore protocol-relative and comparable "
+        "across runs of this tool, not an absolute score."
+    )
+    notes.append(
+        "The Ambit Authority verdict is the weakest of "
+        + ", ".join(p.value for p in AUTHORITY_SPINE)
+        + ". Ambit Authority defines this scope, not DEMM, and no DEMM maturity level "
+        "is derived here — DEMM levels describe the evidence regime, which a static "
+        "file does not reveal."
+    )
+    return notes
+
+
 def render_text(grades: list[Grade]) -> str:
     """Render one or more grades as a plain-text report."""
     if not grades:
@@ -74,21 +116,7 @@ def render_text(grades: list[Grade]) -> str:
         row += "".join(f"{g.verdicts[prop].sufficiency.value:>{_COLUMN}}" for g in grades)
         lines.append(row)
     for grade in grades:
-        details = [
-            (prop, verdict)
-            for prop, verdict in grade.verdicts.items()
-            if verdict.reason is not None or verdict.recommendation is not None
-        ]
-        if not details:
-            continue
-        lines.append("")
-        lines.append(f"Gap details for {terminal_safe(grade.source)}:")
-        for prop, verdict in details:
-            reason = verdict.reason.value if verdict.reason is not None else "not recorded"
-            action = verdict.recommendation or "none"
-            lines.append(
-                f"  {prop.value}: reason={terminal_safe(reason)}; action={terminal_safe(action)}"
-            )
+        lines.extend(_gap_detail_lines(grade))
     lines.append("-" * len(header))
     lines.append(
         f"{'DEMM completeness (7 rows)':<{_LABEL}}"
@@ -99,21 +127,7 @@ def render_text(grades: list[Grade]) -> str:
         + "".join(f"{g.authority.value:>{_COLUMN}}" for g in grades)
     )
     lines.append("")
-    lines.append(
-        "DEMM completeness is the 3.5 weighted average over the seven v0.1.0 "
-        "implementation rows. A partially-fillable property carries its own 3.5 "
-        "confidence — the share of cases it is actually fillable for — rather than "
-        "the reference implementation's flat 0.5 default, which the paper states is "
-        "uncalibrated. Completeness is therefore protocol-relative and comparable "
-        "across runs of this tool, not an absolute score."
-    )
-    lines.append(
-        "The Ambit Authority verdict is the weakest of "
-        + ", ".join(p.value for p in AUTHORITY_SPINE)
-        + ". Ambit Authority defines this scope, not DEMM, and no DEMM maturity level "
-        "is derived here — DEMM levels describe the evidence regime, which a static "
-        "file does not reveal."
-    )
+    lines.extend(_aggregate_notes())
     return "\n".join(lines) + "\n"
 
 

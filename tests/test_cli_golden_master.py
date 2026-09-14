@@ -17,6 +17,7 @@ import functools
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Callable
@@ -90,8 +91,19 @@ def golden() -> dict[str, Any]:
     return data
 
 
+# Python 3.14 patch releases differ in how argparse lists the valid choices of a
+# rejected option: newer ones quote each choice. The golden records the unquoted
+# form, so the quotes are removed before the comparison.
+_ARGPARSE_CHOICES = re.compile(r"\(choose from ([^)]*)\)")
+
+
+def _unquoted_choices(match: re.Match[str]) -> str:
+    choices = (choice.strip().strip("'") for choice in match.group(1).split(","))
+    return f"(choose from {', '.join(choices)})"
+
+
 def _mask(text: str, workdir: Path) -> str:
-    return text.replace(str(workdir), "<TMP>")
+    return _ARGPARSE_CHOICES.sub(_unquoted_choices, text.replace(str(workdir), "<TMP>"))
 
 
 def run_cli(argv: list[str], workdir: Path) -> dict[str, Any]:

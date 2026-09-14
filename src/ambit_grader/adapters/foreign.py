@@ -66,6 +66,33 @@ _CANONICAL_AUTHORITY_FIELDS = frozenset(
 )
 
 
+def _without_canonical_claims(record: dict[str, Any]) -> dict[str, Any]:
+    """Copy a record without the canonical claims that a profile must map itself."""
+    out: dict[str, Any] = dict(record)
+    out.pop("_conflicting_timestamp", None)
+    out.pop("_policy_confidence", None)
+    out.pop("ts", None)
+    out.pop("timestamp_utc", None)
+    for field in _CANONICAL_AUTHORITY_FIELDS:
+        out.pop(field, None)
+    out.pop("_unsupported_decision", None)
+    evidence = out.get("evidence")
+    if isinstance(evidence, dict):
+        evidence = dict(evidence)
+        for container_name, fields in (
+            ("hashes", ("policy_hash", "request_fingerprint")),
+            ("naming", ("matched_rule_id",)),
+        ):
+            container = evidence.get(container_name)
+            if isinstance(container, dict):
+                container = dict(container)
+                for field in fields:
+                    container.pop(field, None)
+                evidence[container_name] = container
+        out["evidence"] = evidence
+    return out
+
+
 @dataclass(frozen=True, slots=True)
 class Profile:
     """One emitter's mapping onto the canonical shape.
@@ -116,29 +143,14 @@ class Profile:
         """Map a record onto canonical paths, omitting anything not present."""
         if self.expand is not None:
             record = self.expand(record)
-        out: dict[str, Any] = dict(record)
-        out.pop("_conflicting_timestamp", None)
-        out.pop("_policy_confidence", None)
-        out.pop("ts", None)
-        out.pop("timestamp_utc", None)
-        for field in _CANONICAL_AUTHORITY_FIELDS:
-            out.pop(field, None)
-        out.pop("_unsupported_decision", None)
-        evidence = out.get("evidence")
-        if isinstance(evidence, dict):
-            evidence = dict(evidence)
-            for container_name, fields in (
-                ("hashes", ("policy_hash", "request_fingerprint")),
-                ("naming", ("matched_rule_id",)),
-            ):
-                container = evidence.get(container_name)
-                if isinstance(container, dict):
-                    container = dict(container)
-                    for field in fields:
-                        container.pop(field, None)
-                    evidence[container_name] = container
-            out["evidence"] = evidence
+        out = _without_canonical_claims(record)
+        self._map_action_fields(record, out)
+        self._map_decision_fields(record, out)
+        self._map_approver(record, out)
+        return out
 
+    def _map_action_fields(self, record: dict[str, Any], out: dict[str, Any]) -> None:
+        """Map who acted, with which tool, doing what, to which object."""
         actor = _first_matching(record, is_identifier, *self.actor)
         if actor is not None:
             out["actor_id"] = actor
@@ -165,6 +177,8 @@ class Profile:
                 obj["id"] = object_id
             out["object"] = obj
 
+    def _map_decision_fields(self, record: dict[str, Any], out: dict[str, Any]) -> None:
+        """Map when the action ran, and its verdict, policy and rule."""
         timestamp, timestamp_conflict = _reconciled_timestamp(
             record, self.timestamp, self.unix_nanosecond_timestamp
         )
@@ -194,6 +208,8 @@ class Profile:
         if rule is not None:
             out["matched_rule_id"] = rule
 
+    def _map_approver(self, record: dict[str, Any], out: dict[str, Any]) -> None:
+        """Map a named approver, bound only through a declared binding path."""
         approver, approver_confidence = _first_matching_confident_claim(
             record, is_identifier, self.approver
         )
@@ -216,8 +232,6 @@ class Profile:
             if approver_confidence is not None:
                 approval["confidence"] = approver_confidence
             out["approval"] = approval
-
-        return out
 
 
 def _has_prefix(record: dict[str, Any], prefix: str) -> bool:

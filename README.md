@@ -22,7 +22,7 @@ Give it a JSONL evidence file. It returns three things, in this order:
 
 ## Install
 
-Python 3.12 or later.
+Python 3.14 or later.
 
 ```bash
 pip install ambit-grader

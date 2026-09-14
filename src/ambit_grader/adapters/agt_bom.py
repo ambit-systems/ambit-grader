@@ -16,6 +16,66 @@ from typing import Any
 from ambit_grader.sufficiency import bounded_confidence
 
 
+def _agt_claims_by_inference(
+    fields: list[Any],
+) -> tuple[
+    dict[tuple[str, str], list[dict[str, Any]]],
+    dict[tuple[str, str], list[dict[str, Any]]],
+]:
+    """Group well-formed BOM entries by category and name, observed apart from inferred."""
+    observed_claims: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    inferred_claims: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for entry in fields:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        category = entry.get("category")
+        if not isinstance(name, str) or not isinstance(category, str):
+            continue
+        inference = entry.get("inferred")
+        if inference is True:
+            claims = inferred_claims
+        elif inference is False:
+            claims = observed_claims
+        else:
+            continue
+        claims.setdefault((category, name), []).append(entry)
+    return observed_claims, inferred_claims
+
+
+def _collapse_agt_claims(
+    claims: dict[tuple[str, str], list[dict[str, Any]]],
+) -> tuple[dict[str, dict[str, Any]], set[str], set[str]]:
+    """Collapse each claim to one entry; name the claims that conflict or lack valid confidence."""
+    bucket: dict[str, dict[str, Any]] = {}
+    conflicts: set[str] = set()
+    invalid_confidence: set[str] = set()
+    missing = object()
+    for (category, name), entries in claims.items():
+        first = entries[0].get("value", missing)
+        equivalent = all(
+            type(value) is type(first) and value == first
+            for entry in entries[1:]
+            for value in (entry.get("value", missing),)
+        )
+        confidences = [bounded_confidence(entry.get("confidence")) for entry in entries]
+        confidence_valid = all(value is not None for value in confidences)
+        if equivalent and confidence_valid:
+            claim = dict(entries[0])
+            claim["confidence"] = min(value for value in confidences if value is not None)
+            bucket.setdefault(category, {})[name] = claim
+        else:
+            # Preserve every unusable representation while making scalar
+            # adapter paths fail closed.
+            bucket.setdefault(category, {})[name] = entries if len(entries) > 1 else entries[0]
+            key = f"{category}.{name}"
+            if not equivalent:
+                conflicts.add(key)
+            if not confidence_valid:
+                invalid_confidence.add(key)
+    return bucket, conflicts, invalid_confidence
+
+
 def expand_agt_bom_fields(record: dict[str, Any]) -> dict[str, Any]:
     """Flatten a Microsoft AGT Decision BOM's ``fields`` list into lookupable paths.
 
@@ -47,56 +107,10 @@ def expand_agt_bom_fields(record: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(fields, list):
         return out
 
-    observed_claims: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    inferred_claims: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    for entry in fields:
-        if not isinstance(entry, dict):
-            continue
-        name = entry.get("name")
-        category = entry.get("category")
-        if not isinstance(name, str) or not isinstance(category, str):
-            continue
-        inference = entry.get("inferred")
-        if inference is True:
-            claims = inferred_claims
-        elif inference is False:
-            claims = observed_claims
-        else:
-            continue
-        claims.setdefault((category, name), []).append(entry)
-
-    observed: dict[str, dict[str, Any]] = {}
-    inferred: dict[str, dict[str, Any]] = {}
-    conflicts: set[str] = set()
-    invalid_confidence: set[str] = set()
-    missing = object()
-    for claims, bucket in (
-        (observed_claims, observed),
-        (inferred_claims, inferred),
-    ):
-        for (category, name), entries in claims.items():
-            first = entries[0].get("value", missing)
-            equivalent = all(
-                type(value) is type(first) and value == first
-                for entry in entries[1:]
-                for value in (entry.get("value", missing),)
-            )
-            confidences = [bounded_confidence(entry.get("confidence")) for entry in entries]
-            confidence_valid = all(value is not None for value in confidences)
-            if equivalent and confidence_valid:
-                claim = dict(entries[0])
-                claim["confidence"] = min(value for value in confidences if value is not None)
-                bucket.setdefault(category, {})[name] = claim
-            else:
-                # Preserve every unusable representation while making scalar
-                # adapter paths fail closed.
-                bucket.setdefault(category, {})[name] = entries if len(entries) > 1 else entries[0]
-                if claims is observed_claims:
-                    key = f"{category}.{name}"
-                    if not equivalent:
-                        conflicts.add(key)
-                    if not confidence_valid:
-                        invalid_confidence.add(key)
+    observed_claims, inferred_claims = _agt_claims_by_inference(fields)
+    observed, conflicts, invalid_confidence = _collapse_agt_claims(observed_claims)
+    # Inferred claims are never lifted, so their conflicts are not marked.
+    inferred, _, _ = _collapse_agt_claims(inferred_claims)
 
     if observed:
         out["_agt_observed"] = observed

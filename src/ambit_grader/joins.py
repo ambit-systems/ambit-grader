@@ -384,6 +384,76 @@ def _policy_attestation_confidence(
     return None
 
 
+@dataclass(slots=True)
+class _AuthorityTally:
+    """How the authority of each accountable action resolved."""
+
+    attributed: int = 0
+    delegated: int = 0
+    unresolved: int = 0
+    policy_only: int = 0
+    unaccounted: int = 0
+    named_unbound: int = 0
+    ambiguous: int = 0
+    confidence_limited: int = 0
+    attribution_credit: float = 0.0
+
+    @property
+    def bare_unaccounted(self) -> int:
+        """Return the unaccounted actions that name no approver at all."""
+        return self.unaccounted - self.named_unbound
+
+
+def _tally_accountable(
+    accountable: list[dict[str, Any]],
+    attestations: dict[str, dict[str, Any]],
+    approvals: _ApprovalJoins,
+) -> _AuthorityTally:
+    """Classify how the authority of each accountable action resolves."""
+    tally = _AuthorityTally()
+    for record in accountable:
+        attestation_confidence = _policy_attestation_confidence(record, attestations)
+        if record.get("decision") is None:
+            tally.unaccounted += 1
+            if _approver_named(record):
+                tally.named_unbound += 1
+            continue
+        resolved, approval_ambiguous = _authority_resolution(record, approvals)
+        if approval_ambiguous:
+            tally.ambiguous += 1
+        elif resolved:
+            tally.attributed += 1
+            tally.attribution_credit += 1.0
+        elif _delegation_is_live(record):
+            # A live delegation proves a specific signed grant — strictly more
+            # than policy permission — but names the delegate, not the grantor.
+            tally.delegated += 1
+        elif record.get("decision") == "ESCALATE":
+            tally.unresolved += 1
+        elif attestation_confidence is not None:
+            # The attestation names the policy's principal, while the BOM
+            # confidence limits how strongly this action can inherit it. Zero
+            # confidence records the matched attestation without establishing
+            # attribution or earning credit.
+            if attestation_confidence < 1.0:
+                tally.confidence_limited += 1
+            if attestation_confidence > 0.0:
+                tally.attributed += 1
+                tally.attribution_credit += attestation_confidence
+        elif _has_policy_identity(record):
+            tally.policy_only += 1
+        else:
+            # An action with neither a principal nor a policy identity. Counting
+            # it nowhere would let a corpus report full attribution while
+            # carrying bare allows or eligible no-verdict action traces.
+            tally.unaccounted += 1
+            if _approver_named(record):
+                # A name is present but did not resolve. Track it separately so
+                # the report distinguishes "nobody named" from "named, not bound".
+                tally.named_unbound += 1
+    return tally
+
+
 def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
     """Grade whether every authority-requiring action names a principal.
 
@@ -439,77 +509,35 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
 
     approvals = _approval_joins(permitted, approvals_by_fingerprint, approvals_by_id)
 
-    attributed = delegated = unresolved = policy_only = unaccounted = named_unbound = 0
-    ambiguous = confidence_limited = 0
-    attribution_credit = 0.0
-    for record in accountable:
-        attestation_confidence = _policy_attestation_confidence(record, attestations)
-        if record.get("decision") is None:
-            unaccounted += 1
-            if _approver_named(record):
-                named_unbound += 1
-            continue
-        resolved, approval_ambiguous = _authority_resolution(record, approvals)
-        if approval_ambiguous:
-            ambiguous += 1
-        elif resolved:
-            attributed += 1
-            attribution_credit += 1.0
-        elif _delegation_is_live(record):
-            # A live delegation proves a specific signed grant — strictly more
-            # than policy permission — but names the delegate, not the grantor.
-            delegated += 1
-        elif record.get("decision") == "ESCALATE":
-            unresolved += 1
-        elif attestation_confidence is not None:
-            # The attestation names the policy's principal, while the BOM
-            # confidence limits how strongly this action can inherit it. Zero
-            # confidence records the matched attestation without establishing
-            # attribution or earning credit.
-            if attestation_confidence < 1.0:
-                confidence_limited += 1
-            if attestation_confidence > 0.0:
-                attributed += 1
-                attribution_credit += attestation_confidence
-        elif _has_policy_identity(record):
-            policy_only += 1
-        else:
-            # An action with neither a principal nor a policy identity. Counting
-            # it nowhere would let a corpus report full attribution while
-            # carrying bare allows or eligible no-verdict action traces.
-            unaccounted += 1
-            if _approver_named(record):
-                # A name is present but did not resolve. Track it separately so
-                # the report distinguishes "nobody named" from "named, not bound".
-                named_unbound += 1
-    bare_unaccounted = unaccounted - named_unbound
+    tally = _tally_accountable(accountable, attestations, approvals)
 
     # Eligible no-verdict action traces remain in the same authority
     # denominator as permitted decisions. Unsupported verdicts also remain and
     # never earn attribution merely because normalization could not classify
     # them.
     authority_denominator = len(accountable) + unsupported
-    attributed_share = (attribution_credit + 0.5 * delegated) / authority_denominator
+    attributed_share = (tally.attribution_credit + 0.5 * tally.delegated) / authority_denominator
     scope = f"{len(permitted)} permitted action(s)"
     if no_verdict:
         scope += f" plus {len(no_verdict)} eligible action(s) without a verdict"
 
     detail = (
-        f"{scope}: {attributed} attributable to a named principal, "
-        f"{confidence_limited} with a confidence-limited matching policy attestation, "
-        f"{delegated} under a delegation whose issuer is not evidenced, "
-        f"{policy_only} policy-permitted only, {unresolved} escalated without a resolving "
-        f"approval, {ambiguous} with an ambiguous approval join, "
-        f"{named_unbound} naming an approver not bound to this action, "
-        f"{bare_unaccounted} with no authority evidence at all, "
+        f"{scope}: {tally.attributed} attributable to a named principal, "
+        f"{tally.confidence_limited} with a confidence-limited matching policy attestation, "
+        f"{tally.delegated} under a delegation whose issuer is not evidenced, "
+        f"{tally.policy_only} policy-permitted only, "
+        f"{tally.unresolved} escalated without a resolving "
+        f"approval, {tally.ambiguous} with an ambiguous approval join, "
+        f"{tally.named_unbound} naming an approver not bound to this action, "
+        f"{tally.bare_unaccounted} with no authority evidence at all, "
         f"{unsupported} unsupported decision verdict(s) "
         f"({denied} denial(s) excluded)"
     )
 
-    if ambiguous or unsupported:
+    if tally.ambiguous or unsupported:
         problems = []
-        if ambiguous:
-            problems.append(f"disambiguate {ambiguous} approval join(s)")
+        if tally.ambiguous:
+            problems.append(f"disambiguate {tally.ambiguous} approval join(s)")
         if unsupported:
             problems.append(f"correct {unsupported} unsupported decision verdict(s)")
         return PropertyVerdict(
@@ -519,7 +547,7 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
             recommendation=" and ".join(problems),
             detail=detail,
         )
-    if unresolved:
+    if tally.unresolved:
         return PropertyVerdict(
             Property.PRINCIPAL_AUTHORITY,
             Sufficiency.STRUCTURALLY_UNFILLABLE,
@@ -530,12 +558,12 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
             # emitting something nobody emits.
             reason=UnfillableReason.CROSS_STACK_BOUNDARY,
             recommendation=(
-                f"link the {unresolved} unresolved escalation(s) to an approval record "
+                f"link the {tally.unresolved} unresolved escalation(s) to an approval record "
                 "carrying a named approver"
             ),
             detail=detail,
         )
-    if unaccounted == len(accountable):
+    if tally.unaccounted == len(accountable):
         # Nothing recoverable at all. `partially_fillable` means recoverable
         # evidence plus a gap description; where every permitted action lacks
         # a principal, a policy and a delegation alike, there is no evidence
@@ -547,21 +575,21 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
             Sufficiency.STRUCTURALLY_UNFILLABLE,
             reason=UnfillableReason.EVIDENCE_NEVER_PERSISTED,
             recommendation=_authority_gap_recommendation(
-                bare_unaccounted, named_unbound, "permitted action(s)"
+                tally.bare_unaccounted, tally.named_unbound, "permitted action(s)"
             ),
             detail=detail,
         )
-    if unaccounted:
+    if tally.unaccounted:
         return PropertyVerdict(
             Property.PRINCIPAL_AUTHORITY,
             Sufficiency.PARTIALLY_FILLABLE,
             confidence=attributed_share,
             recommendation=_authority_gap_recommendation(
-                bare_unaccounted, named_unbound, "bare allow(s)"
+                tally.bare_unaccounted, tally.named_unbound, "bare allow(s)"
             ),
             detail=detail,
         )
-    if delegated:
+    if tally.delegated:
         # Capped deliberately. A corpus of nothing but delegations would
         # otherwise report full attribution with no principal anywhere in the
         # evidence — the grader flattering its own vendor's artifact.
@@ -570,20 +598,21 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
             Sufficiency.PARTIALLY_FILLABLE,
             confidence=attributed_share,
             recommendation=(
-                f"evidence the issuer of the {delegated} delegation(s) — record who granted "
+                f"evidence the issuer of the {tally.delegated} delegation(s) — record who granted "
                 "the delegation, or sign it asymmetrically so a trust root identifies them; "
                 "an HMAC token cannot, because its verify key is its forge key"
             ),
             detail=detail,
         )
-    if confidence_limited:
+    if tally.confidence_limited:
         recommendation = (
-            f"raise confidence for the {confidence_limited} attested policy identity "
+            f"raise confidence for the {tally.confidence_limited} attested policy identity "
             "claim(s) to 1.0 before treating their actions as fully attributable"
         )
-        if policy_only:
+        if tally.policy_only:
             recommendation += (
-                f"; attest the policy that permitted the {policy_only} other automatic allow(s)"
+                f"; attest the policy that permitted the {tally.policy_only} "
+                "other automatic allow(s)"
             )
         return PropertyVerdict(
             Property.PRINCIPAL_AUTHORITY,
@@ -592,17 +621,17 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
             recommendation=recommendation,
             detail=detail,
         )
-    if attributed and not policy_only:
+    if tally.attributed and not tally.policy_only:
         return PropertyVerdict(
             Property.PRINCIPAL_AUTHORITY, Sufficiency.FULLY_FILLABLE, detail=detail
         )
-    if attributed or policy_only:
+    if tally.attributed or tally.policy_only:
         return PropertyVerdict(
             Property.PRINCIPAL_AUTHORITY,
             Sufficiency.PARTIALLY_FILLABLE,
             confidence=attributed_share,
             recommendation=(
-                f"attest the policy that permitted the {policy_only} automatic allow(s) — "
+                f"attest the policy that permitted the {tally.policy_only} automatic allow(s) — "
                 "bind policy_hash to a signed record naming who approved that policy"
             ),
             detail=detail,

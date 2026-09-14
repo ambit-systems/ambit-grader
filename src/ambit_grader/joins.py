@@ -248,45 +248,68 @@ def _authority_resolution(record: dict[str, Any], approvals: _ApprovalJoins) -> 
     ):
         return False, True
     if _approval_envelope_resolves(record):
-        if approval_id is not None:
-            if approvals.id_uses.get(approval_id, 0) != 1:
-                return False, True
-            external_candidates = approvals.by_id.get(approval_id, [])
-        else:
-            binding_fingerprint = fingerprint if fingerprint is not None else envelope_fingerprint
-            if (
-                binding_fingerprint is not None
-                and approvals.fingerprint_uses.get(binding_fingerprint, 0) != 1
-            ):
-                return False, True
-            external_candidates = (
-                approvals.by_fingerprint.get(binding_fingerprint, [])
-                if binding_fingerprint is not None
-                else []
-            )
-        if len(external_candidates) > 1:
+        binding_fingerprint = fingerprint if fingerprint is not None else envelope_fingerprint
+        return _envelope_resolution(record, approval_id, binding_fingerprint, approvals)
+    return _approval_record_resolution(record, approval_id, fingerprint, approvals)
+
+
+def _envelope_resolution(
+    record: dict[str, Any],
+    approval_id: str | int | None,
+    binding_fingerprint: str | int | None,
+    approvals: _ApprovalJoins,
+) -> tuple[bool, bool]:
+    """Resolve an action whose own approval envelope is valid and bound.
+
+    An approval record reached through the same join handle must agree with
+    the envelope. Otherwise the join is ambiguous.
+    """
+    if approval_id is not None:
+        if approvals.id_uses.get(approval_id, 0) != 1:
             return False, True
-        if external_candidates:
-            candidate = external_candidates[0]
-            if approvals.record_uses.get(id(candidate), 0) != 1:
-                return False, True
-            candidate_fingerprint = _approval_fingerprint(candidate)
-            expected_fingerprint = fingerprint if fingerprint is not None else envelope_fingerprint
-            if (
-                not _approval_record_resolves(candidate)
-                or candidate.get("approval_approver") != _approval_envelope_approver(record)
-                or (
-                    expected_fingerprint is not None
-                    and candidate_fingerprint is not None
-                    and candidate_fingerprint != expected_fingerprint
-                )
-                or (
-                    candidate_fingerprint is not None
-                    and len(approvals.by_fingerprint.get(candidate_fingerprint, [])) != 1
-                )
-            ):
-                return False, True
-        return True, False
+        external_candidates = approvals.by_id.get(approval_id, [])
+    else:
+        if (
+            binding_fingerprint is not None
+            and approvals.fingerprint_uses.get(binding_fingerprint, 0) != 1
+        ):
+            return False, True
+        external_candidates = (
+            approvals.by_fingerprint.get(binding_fingerprint, [])
+            if binding_fingerprint is not None
+            else []
+        )
+    if len(external_candidates) > 1:
+        return False, True
+    if external_candidates:
+        candidate = external_candidates[0]
+        if approvals.record_uses.get(id(candidate), 0) != 1:
+            return False, True
+        candidate_fingerprint = _approval_fingerprint(candidate)
+        if (
+            not _approval_record_resolves(candidate)
+            or candidate.get("approval_approver") != _approval_envelope_approver(record)
+            or (
+                binding_fingerprint is not None
+                and candidate_fingerprint is not None
+                and candidate_fingerprint != binding_fingerprint
+            )
+            or (
+                candidate_fingerprint is not None
+                and len(approvals.by_fingerprint.get(candidate_fingerprint, [])) != 1
+            )
+        ):
+            return False, True
+    return True, False
+
+
+def _approval_record_resolution(
+    record: dict[str, Any],
+    approval_id: str | int | None,
+    fingerprint: str | int | None,
+    approvals: _ApprovalJoins,
+) -> tuple[bool, bool]:
+    """Resolve an action through a separate approval record, or else a live delegation."""
     if approval_id is not None:
         candidates = approvals.by_id.get(approval_id, [])
         if len(candidates) == 1:

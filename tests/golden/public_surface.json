@@ -1,0 +1,168 @@
+{
+  "modules": {
+    "ambit_grader": {
+      "__all__": [
+        "AUTHORITY_SPINE",
+        "IMPLEMENTATION_ROWS",
+        "EvidenceReadError",
+        "Grade",
+        "Property",
+        "PropertyVerdict",
+        "Sufficiency",
+        "UnfillableReason",
+        "grade_records",
+        "load_jsonl",
+        "render_json",
+        "render_text",
+        "to_dict"
+      ],
+      "members": {
+        "AUTHORITY_SPINE": "tuple=(<Property.PRINCIPAL_AUTHORITY: 'principal_authority'>, <Property.ACTION_BOUNDARY: 'action_boundary'>, <Property.VERIFICATION_STRENGTH: 'verification_strength'>)",
+        "EvidenceReadError": "class EvidenceReadError<no signature> {}",
+        "Grade": "class Grade(source: 'str', record_count: 'int', verdicts: 'dict[Property, PropertyVerdict]' = <factory>, completeness: 'float' = 0.0, authority: 'Sufficiency' = <Sufficiency.STRUCTURALLY_UNFILLABLE: 'structurally_unfillable'>, shapes: 'str' = '', unrecognised: 'int' = 0) -> None {next_move(self) -> 'str'; row_verdicts(self) -> 'list[tuple[str, Sufficiency]]'}",
+        "IMPLEMENTATION_ROWS": "tuple=(('actor_identity_and_principal_authority', (<Property.ACTOR_IDENTITY: 'actor_identity'>, <Property.PRINCIPAL_AUTHORITY: 'principal_authority'>)), ('action_boundary_and_configuration_envelope', (<Property.ACTION_BOUNDARY: 'action_boundary'>,)), ('policy_basis', (<Property.POLICY_BASIS: 'policy_basis'>,)), ('reasoning_trace_with_opaque_substitution', (<Property.DECISION_BASIS: 'decision_basis'>,)), ('inputs', (<Property.DATA_TOUCH: 'data_and_resource_touch'>,)), ('post_condition_state', (<Property.LIFECYCLE_CONTEXT: 'lifecycle_context'>,)), ('output_action', (<Property.VERIFICATION_STRENGTH: 'verification_strength'>,)))",
+        "Property": "enum Property[ACTOR_IDENTITY='actor_identity', PRINCIPAL_AUTHORITY='principal_authority', ACTION_BOUNDARY='action_boundary', POLICY_BASIS='policy_basis', DECISION_BASIS='decision_basis', DATA_TOUCH='data_and_resource_touch', LIFECYCLE_CONTEXT='lifecycle_context', VERIFICATION_STRENGTH='verification_strength']",
+        "PropertyVerdict": "class PropertyVerdict(prop: 'Property', sufficiency: 'Sufficiency', reason: 'UnfillableReason | None' = None, recommendation: 'str | None' = None, detail: 'str | None' = None, confidence: 'float | None' = None) -> None {weight: property}",
+        "Sufficiency": "enum Sufficiency[FULLY_FILLABLE='fully_fillable', PARTIALLY_FILLABLE='partially_fillable', STRUCTURALLY_UNFILLABLE='structurally_unfillable', OPAQUE='opaque', CONFLICTING='conflicting']",
+        "UnfillableReason": "enum UnfillableReason[CROSS_STACK_BOUNDARY='cross_stack_boundary', STATE_LOST='state_lost', EVIDENCE_NEVER_PERSISTED='evidence_never_persisted', NON_COOPERATIVE_STRIPPING='non_cooperative_stripping']",
+        "grade_records": "function(source: 'str', records: 'list[dict[str, Any]]') -> 'Grade'",
+        "load_jsonl": "function(path: 'str | os.PathLike[str]') -> 'list[dict[str, Any]]'",
+        "render_json": "function(grades: 'list[Grade]') -> 'str'",
+        "render_text": "function(grades: 'list[Grade]') -> 'str'",
+        "to_dict": "function(grade: 'Grade') -> 'dict[str, Any]'"
+      }
+    },
+    "ambit_grader.adapters": {
+      "__all__": [
+        "foreign",
+        "normalise"
+      ],
+      "members": {
+        "foreign": "module ambit_grader.adapters.foreign",
+        "normalise": "module ambit_grader.adapters.normalise"
+      }
+    },
+    "ambit_grader.adapters.foreign": {
+      "__all__": null,
+      "members": {
+        "LANGFUSE": "Profile=Profile(name='langfuse', detect=<function <lambda> at 0x?>, decision_event=True, actor=('userId', 'metadata.actor_id', 'metadata.agent', 'metadata.agent_id'), tool=('name',), action_type=('type',), object_id=('id', 'observationId'), timestamp=('startTime', 'timestamp'), unix_nanosecond_timestamp=(), verdict=(), policy=('metadata.policy_hash', 'metadata.policy'), rule=(), approver=('metadata.approver', 'metadata.approved_by'), approval_binding=(), expand=None)",
+        "LANGSMITH": "Profile=Profile(name='langsmith', detect=<function <lambda> at 0x?>, decision_event=True, actor=('extra.metadata.actor_id', 'extra.metadata.agent'), tool=('name',), action_type=('run_type',), object_id=('id', 'run_id'), timestamp=('start_time', 'start_timestamp'), unix_nanosecond_timestamp=(), verdict=(), policy=('extra.metadata.policy_hash',), rule=(), approver=('extra.metadata.approver', 'extra.metadata.approved_by'), approval_binding=(), expand=None)",
+        "MS_AGT": "Profile=Profile(name='microsoft_agt', detect=<function <lambda> at 0x?>, decision_event=True, actor=('agent_id', 'agent.id', 'principal_id'), tool=('tool', 'tool_name', 'action.tool', 'action_requested'), action_type=('action', 'action.type', 'operation', 'action_requested'), object_id=('resource', 'resource_id', 'target'), timestamp=('timestamp', 'time', 'occurred_at'), unix_nanosecond_timestamp=(), verdict=('decision', 'decision.outcome', 'outcome', 'result'), policy=('policy_id', 'policy.id', '_agt_observed.policy.policy_id.value'), rule=(), approver=('_agt_observed.identity.approver.value', '_agt_observed.identity.approved_by.value', '_agt_observed.identity.reviewer.value', '_agt_observed.identity.principal.value'), approval_binding=(), expand=<function expand_agt_bom_fields at 0x?>)",
+        "OPENINFERENCE": "Profile=Profile(name='openinference', detect=<function <lambda> at 0x?>, decision_event=True, actor=('attributes.agent.name', 'attributes.session.id', 'agent.name'), tool=('attributes.tool.name', 'tool.name', 'name'), action_type=('attributes.openinference.span.kind', 'openinference.span.kind'), object_id=('attributes.tool.call.id', 'attributes.retrieval.document.id'), timestamp=('start_time', 'startTime', 'timestamp'), unix_nanosecond_timestamp=(), verdict=(), policy=(), rule=(), approver=(), approval_binding=(), expand=None)",
+        "OTEL_GENAI": "Profile=Profile(name='otel_genai', detect=<function <lambda> at 0x?>, decision_event=True, actor=('attributes.gen_ai.agent.id', 'attributes.gen_ai.agent.name', 'gen_ai.agent.id'), tool=('attributes.gen_ai.tool.name', 'gen_ai.tool.name', 'name'), action_type=('attributes.gen_ai.operation.name', 'gen_ai.operation.name'), object_id=('attributes.gen_ai.tool.call.id', 'gen_ai.tool.call.id'), timestamp=('start_time', 'timestamp'), unix_nanosecond_timestamp=('startTimeUnixNano',), verdict=(), policy=(), rule=(), approver=(), approval_binding=(), expand=None)",
+        "PROFILES": "tuple=(Profile(name='microsoft_agt', detect=<function <lambda> at 0x?>, decision_event=True, actor=('agent_id', 'agent.id', 'principal_id'), tool=('tool', 'tool_name', 'action.tool', 'action_requested'), action_type=('action', 'action.type', 'operation', 'action_requested'), object_id=('resource', 'resource_id', 'target'), timestamp=('timestamp', 'time', 'occurred_at'), unix_nanosecond_timestamp=(), verdict=('decision', 'decision.outcome', 'outcome', 'result'), policy=('policy_id', 'policy.id', '_agt_observed.policy.policy_id.value'), rule=(), approver=('_agt_observed.identity.approver.value', '_agt_observed.identity.approved_by.value', '_agt_observed.identity.reviewer.value', '_agt_observed.identity.principal.value'), approval_binding=(), expand=<function expand_agt_bom_fields at 0x?>), Profile(name='otel_genai', detect=<function <lambda> at 0x?>, decision_event=True, actor=('attributes.gen_ai.agent.id', 'attributes.gen_ai.agent.name', 'gen_ai.agent.id'), tool=('attributes.gen_ai.tool.name', 'gen_ai.tool.name', 'name'), action_type=('attributes.gen_ai.operation.name', 'gen_ai.operation.name'), object_id=('attributes.gen_ai.tool.call.id', 'gen_ai.tool.call.id'), timestamp=('start_time', 'timestamp'), unix_nanosecond_timestamp=('startTimeUnixNano',), verdict=(), policy=(), rule=(), approver=(), approval_binding=(), expand=None), Profile(name='openinference', detect=<function <lambda> at 0x?>, decision_event=True, actor=('attributes.agent.name', 'attributes.session.id', 'agent.name'), tool=('attributes.tool.name', 'tool.name', 'name'), action_type=('attributes.openinference.span.kind', 'openinference.span.kind'), object_id=('attributes.tool.call.id', 'attributes.retrieval.document.id'), timestamp=('start_time', 'startTime', 'timestamp'), unix_nanosecond_timestamp=(), verdict=(), policy=(), rule=(), approver=(), approval_binding=(), expand=None), Profile(name='langsmith', detect=<function <lambda> at 0x?>, decision_event=True, actor=('extra.metadata.actor_id', 'extra.metadata.agent'), tool=('name',), action_type=('run_type',), object_id=('id', 'run_id'), timestamp=('start_time', 'start_timestamp'), unix_nanosecond_timestamp=(), verdict=(), policy=('extra.metadata.policy_hash',), rule=(), approver=('extra.metadata.approver', 'extra.metadata.approved_by'), approval_binding=(), expand=None), Profile(name='weave', detect=<function <lambda> at 0x?>, decision_event=True, actor=('attributes.actor_id', 'attributes.agent', 'wb_user_id'), tool=('op_name',), action_type=('attributes.kind',), object_id=('id', 'call_id'), timestamp=('started_at', 'start_time'), unix_nanosecond_timestamp=(), verdict=(), policy=('attributes.policy_hash',), rule=(), approver=('attributes.approver',), approval_binding=(), expand=None), Profile(name='langfuse', detect=<function <lambda> at 0x?>, decision_event=True, actor=('userId', 'metadata.actor_id', 'metadata.agent', 'metadata.agent_id'), tool=('name',), action_type=('type',), object_id=('id', 'observationId'), timestamp=('startTime', 'timestamp'), unix_nanosecond_timestamp=(), verdict=(), policy=('metadata.policy_hash', 'metadata.policy'), rule=(), approver=('metadata.approver', 'metadata.approved_by'), approval_binding=(), expand=None))",
+        "Profile": "class Profile(name: 'str', detect: 'Callable[[dict[str, Any]], bool]', decision_event: 'bool' = True, actor: 'tuple[str, ...]' = (), tool: 'tuple[str, ...]' = (), action_type: 'tuple[str, ...]' = (), object_id: 'tuple[str, ...]' = (), timestamp: 'tuple[str, ...]' = (), unix_nanosecond_timestamp: 'tuple[str, ...]' = (), verdict: 'tuple[str, ...]' = (), policy: 'tuple[str, ...]' = (), rule: 'tuple[str, ...]' = (), approver: 'tuple[str, ...]' = (), approval_binding: 'tuple[str, ...]' = (), expand: 'Callable[[dict[str, Any]], dict[str, Any]] | None' = None) -> None {apply(self, record: 'dict[str, Any]') -> 'dict[str, Any]'}",
+        "WEAVE": "Profile=Profile(name='weave', detect=<function <lambda> at 0x?>, decision_event=True, actor=('attributes.actor_id', 'attributes.agent', 'wb_user_id'), tool=('op_name',), action_type=('attributes.kind',), object_id=('id', 'call_id'), timestamp=('started_at', 'start_time'), unix_nanosecond_timestamp=(), verdict=(), policy=('attributes.policy_hash',), rule=(), approver=('attributes.approver',), approval_binding=(), expand=None)",
+        "expand_agt_bom_fields": "function(record: 'dict[str, Any]') -> 'dict[str, Any]'",
+        "match": "function(record: 'dict[str, Any]') -> 'Profile | None'"
+      }
+    },
+    "ambit_grader.adapters.normalise": {
+      "__all__": null,
+      "members": {
+        "DECISION_EVENT_TYPES": "frozenset=frozenset({'decision'})",
+        "Normalised": "class Normalised(records: 'list[dict[str, Any]]' = <factory>, shapes: 'Counter[str]' = <factory>, unrecognised: 'int' = 0) -> None {summary(self) -> 'str'}",
+        "is_decision_event": "function(record: 'dict[str, Any]') -> 'bool'",
+        "normalise": "function(records: 'list[dict[str, Any]]') -> 'Normalised'",
+        "normalise_record": "function(record: 'dict[str, Any]') -> 'dict[str, Any] | None'"
+      }
+    },
+    "ambit_grader.aggregate": {
+      "__all__": null,
+      "members": {
+        "combine": "function(results: 'list[Sufficiency]') -> 'Sufficiency'",
+        "completeness": "function(verdicts: 'dict[Property, PropertyVerdict]') -> 'float'",
+        "grade_records": "function(source: 'str', records: 'list[dict[str, Any]]') -> 'Grade'",
+        "partial_confidence": "function(fractions: 'list[float]') -> 'float'"
+      }
+    },
+    "ambit_grader.cli": {
+      "__all__": null,
+      "members": {
+        "EXIT_BELOW_THRESHOLD": "int=5",
+        "EXIT_OK": "int=0",
+        "EXIT_READ_ERROR": "int=1",
+        "build_parser": "function() -> 'argparse.ArgumentParser'",
+        "main": "function(argv: 'list[str] | None' = None) -> 'int'",
+        "run_grade": "function(paths: 'Sequence[Path]', *, output_format: 'str', min_completeness: 'float | None') -> 'int'"
+      }
+    },
+    "ambit_grader.joins": {
+      "__all__": null,
+      "members": {
+        "CORPUS_CHECKS": "dict={<Property.PRINCIPAL_AUTHORITY: 'principal_authority'>: <function principal_authority at 0x?>, <Property.VERIFICATION_STRENGTH: 'verification_strength'>: <function chain_integrity at 0x?>}",
+        "chain_integrity": "function(records: 'list[dict[str, Any]]') -> 'PropertyVerdict'",
+        "principal_authority": "function(records: 'list[dict[str, Any]]') -> 'PropertyVerdict'"
+      }
+    },
+    "ambit_grader.jsonl": {
+      "__all__": null,
+      "members": {
+        "EvidenceReadError": "class EvidenceReadError<no signature> {}",
+        "MAX_FILE_BYTES": "int=67108864",
+        "MAX_JSON_DEPTH": "int=100",
+        "MAX_JSON_VALUES": "int=250000",
+        "MAX_LINE_BYTES": "int=4194304",
+        "MAX_RECORDS": "int=100000",
+        "load": "function(path: 'str | os.PathLike[str]') -> 'list[dict[str, Any]]'"
+      }
+    },
+    "ambit_grader.models": {
+      "__all__": null,
+      "members": {
+        "AUTHORITY_SPINE": "tuple=(<Property.PRINCIPAL_AUTHORITY: 'principal_authority'>, <Property.ACTION_BOUNDARY: 'action_boundary'>, <Property.VERIFICATION_STRENGTH: 'verification_strength'>)",
+        "DEFAULT_PARTIAL_CONFIDENCE": "float=0.5",
+        "Grade": "class Grade(source: 'str', record_count: 'int', verdicts: 'dict[Property, PropertyVerdict]' = <factory>, completeness: 'float' = 0.0, authority: 'Sufficiency' = <Sufficiency.STRUCTURALLY_UNFILLABLE: 'structurally_unfillable'>, shapes: 'str' = '', unrecognised: 'int' = 0) -> None {next_move(self) -> 'str'; row_verdicts(self) -> 'list[tuple[str, Sufficiency]]'}",
+        "IMPLEMENTATION_ROWS": "tuple=(('actor_identity_and_principal_authority', (<Property.ACTOR_IDENTITY: 'actor_identity'>, <Property.PRINCIPAL_AUTHORITY: 'principal_authority'>)), ('action_boundary_and_configuration_envelope', (<Property.ACTION_BOUNDARY: 'action_boundary'>,)), ('policy_basis', (<Property.POLICY_BASIS: 'policy_basis'>,)), ('reasoning_trace_with_opaque_substitution', (<Property.DECISION_BASIS: 'decision_basis'>,)), ('inputs', (<Property.DATA_TOUCH: 'data_and_resource_touch'>,)), ('post_condition_state', (<Property.LIFECYCLE_CONTEXT: 'lifecycle_context'>,)), ('output_action', (<Property.VERIFICATION_STRENGTH: 'verification_strength'>,)))",
+        "LEVEL_DESCRIPTIONS": "dict={1: 'ad-hoc \u2014 reactive manual assembly on challenge; turnaround days-weeks', 2: 'process-attested \u2014 governance processes; manual reconstruction; hours-days', 3: 'property-instrumented \u2014 runtime captures schema-named properties; minutes-hours', 4: 'sufficiency-tested \u2014 instrumented regime exercised against a question battery', 5: 'continuously-attested \u2014 sufficiency monitored as an SLO; degradation alarms'}",
+        "Property": "enum Property[ACTOR_IDENTITY='actor_identity', PRINCIPAL_AUTHORITY='principal_authority', ACTION_BOUNDARY='action_boundary', POLICY_BASIS='policy_basis', DECISION_BASIS='decision_basis', DATA_TOUCH='data_and_resource_touch', LIFECYCLE_CONTEXT='lifecycle_context', VERIFICATION_STRENGTH='verification_strength']",
+        "PropertyVerdict": "class PropertyVerdict(prop: 'Property', sufficiency: 'Sufficiency', reason: 'UnfillableReason | None' = None, recommendation: 'str | None' = None, detail: 'str | None' = None, confidence: 'float | None' = None) -> None {weight: property}",
+        "ROW_COUNT": "int=7",
+        "Sufficiency": "enum Sufficiency[FULLY_FILLABLE='fully_fillable', PARTIALLY_FILLABLE='partially_fillable', STRUCTURALLY_UNFILLABLE='structurally_unfillable', OPAQUE='opaque', CONFLICTING='conflicting']",
+        "UnfillableReason": "enum UnfillableReason[CROSS_STACK_BOUNDARY='cross_stack_boundary', STATE_LOST='state_lost', EVIDENCE_NEVER_PERSISTED='evidence_never_persisted', NON_COOPERATIVE_STRIPPING='non_cooperative_stripping']",
+        "WEIGHT": "dict={<Sufficiency.FULLY_FILLABLE: 'fully_fillable'>: 1.0, <Sufficiency.OPAQUE: 'opaque'>: 1.0, <Sufficiency.PARTIALLY_FILLABLE: 'partially_fillable'>: 0.5, <Sufficiency.STRUCTURALLY_UNFILLABLE: 'structurally_unfillable'>: 0.0, <Sufficiency.CONFLICTING: 'conflicting'>: 0.0}"
+      }
+    },
+    "ambit_grader.properties": {
+      "__all__": null,
+      "members": {
+        "RECOMMENDATIONS": "dict={<Property.ACTOR_IDENTITY: 'actor_identity'>: 'emit a stable actor id on every record', <Property.ACTION_BOUNDARY: 'action_boundary'>: 'emit action.type and action.boundary alongside tool_name', <Property.POLICY_BASIS: 'policy_basis'>: 'emit a real policy_hash and the matched rule id', <Property.DATA_TOUCH: 'data_and_resource_touch'>: 'emit object.kind, object.id and object.domain for the target', <Property.LIFECYCLE_CONTEXT: 'lifecycle_context'>: 'emit timestamp, sequence number and governance mode'}",
+        "RECORD_CHECKS": "dict={<Property.ACTOR_IDENTITY: 'actor_identity'>: <function actor_identity at 0x?>, <Property.ACTION_BOUNDARY: 'action_boundary'>: <function action_boundary at 0x?>, <Property.POLICY_BASIS: 'policy_basis'>: <function policy_basis at 0x?>, <Property.DATA_TOUCH: 'data_and_resource_touch'>: <function data_touch at 0x?>, <Property.LIFECYCLE_CONTEXT: 'lifecycle_context'>: <function lifecycle_context at 0x?>}",
+        "RecordCheck": "_CallableGenericAlias=collections.abc.Callable[[dict[str, typing.Any]], 'tuple[Sufficiency, float]']",
+        "UNFILLABLE_REASONS": "dict={<Property.ACTOR_IDENTITY: 'actor_identity'>: <UnfillableReason.EVIDENCE_NEVER_PERSISTED: 'evidence_never_persisted'>, <Property.ACTION_BOUNDARY: 'action_boundary'>: <UnfillableReason.EVIDENCE_NEVER_PERSISTED: 'evidence_never_persisted'>, <Property.POLICY_BASIS: 'policy_basis'>: <UnfillableReason.EVIDENCE_NEVER_PERSISTED: 'evidence_never_persisted'>, <Property.DATA_TOUCH: 'data_and_resource_touch'>: <UnfillableReason.EVIDENCE_NEVER_PERSISTED: 'evidence_never_persisted'>, <Property.LIFECYCLE_CONTEXT: 'lifecycle_context'>: <UnfillableReason.EVIDENCE_NEVER_PERSISTED: 'evidence_never_persisted'>}",
+        "action_boundary": "function(record: 'dict[str, Any]') -> 'tuple[Sufficiency, float]'",
+        "actor_identity": "function(record: 'dict[str, Any]') -> 'tuple[Sufficiency, float]'",
+        "data_touch": "function(record: 'dict[str, Any]') -> 'tuple[Sufficiency, float]'",
+        "lifecycle_context": "function(record: 'dict[str, Any]') -> 'tuple[Sufficiency, float]'",
+        "policy_basis": "function(record: 'dict[str, Any]') -> 'tuple[Sufficiency, float]'"
+      }
+    },
+    "ambit_grader.report": {
+      "__all__": null,
+      "members": {
+        "headline": "function(grade: 'Grade') -> 'str'",
+        "render_json": "function(grades: 'list[Grade]') -> 'str'",
+        "render_text": "function(grades: 'list[Grade]') -> 'str'",
+        "terminal_safe": "function(value: 'object') -> 'str'",
+        "to_dict": "function(grade: 'Grade') -> 'dict[str, Any]'"
+      }
+    },
+    "ambit_grader.sufficiency": {
+      "__all__": null,
+      "members": {
+        "bounded_confidence": "function(value: 'Any') -> 'float | None'",
+        "dig": "function(record: 'dict[str, Any]', path: 'str') -> 'Any'",
+        "interpretable": "function(value: 'Any') -> 'bool'",
+        "is_genesis": "function(value: 'object') -> 'bool'",
+        "is_identifier": "function(value: 'Any') -> 'bool'",
+        "is_placeholder": "function(value: 'str') -> 'bool'",
+        "is_sequence": "function(value: 'Any') -> 'bool'",
+        "is_substantive": "function(value: 'Any') -> 'bool'",
+        "is_text": "function(value: 'Any') -> 'TypeGuard[str]'",
+        "is_timestamp": "function(value: 'Any') -> 'bool'",
+        "is_unix_nanoseconds": "function(value: 'Any') -> 'bool'",
+        "timestamp_instant": "function(value: 'Any') -> 'tuple[int, int, int, int, int, int, int] | None'"
+      }
+    }
+  }
+}

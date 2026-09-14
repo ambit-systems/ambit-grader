@@ -15,6 +15,7 @@ Every check here answers a question about the *set*, not about a record.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from itertools import pairwise
 from typing import Any
 
@@ -156,6 +157,48 @@ def _approval_record_uses(
     return uses
 
 
+@dataclass(frozen=True, slots=True)
+class _ApprovalJoins:
+    """Approval records by join handle, and how many permitted actions use each handle."""
+
+    by_fingerprint: dict[str | int, list[dict[str, Any]]]
+    by_id: dict[str | int, list[dict[str, Any]]]
+    fingerprint_uses: dict[str | int, int]
+    id_uses: dict[str | int, int]
+    record_uses: dict[int, int]
+
+
+def _approval_joins(
+    permitted: list[dict[str, Any]],
+    approvals_by_fingerprint: dict[str | int, list[dict[str, Any]]],
+    approvals_by_id: dict[str | int, list[dict[str, Any]]],
+) -> _ApprovalJoins:
+    """Count the join handles the permitted actions use, beside the approval indexes."""
+    fingerprint_uses: dict[str | int, int] = {}
+    approval_id_uses: dict[str | int, int] = {}
+    for record in permitted:
+        fingerprints = {
+            key
+            for value in (
+                record.get("request_fingerprint"),
+                _approval_fingerprint(record),
+            )
+            if (key := _scalar_key(value)) is not None
+        }
+        for key in fingerprints:
+            fingerprint_uses[key] = fingerprint_uses.get(key, 0) + 1
+        approval_id = _approval_id(record)
+        if approval_id is not None:
+            approval_id_uses[approval_id] = approval_id_uses.get(approval_id, 0) + 1
+    return _ApprovalJoins(
+        by_fingerprint=approvals_by_fingerprint,
+        by_id=approvals_by_id,
+        fingerprint_uses=fingerprint_uses,
+        id_uses=approval_id_uses,
+        record_uses=_approval_record_uses(permitted, approvals_by_fingerprint, approvals_by_id),
+    )
+
+
 def _authority_gap_recommendation(bare_unaccounted: int, named_unbound: int, noun: str) -> str:
     """Recommend the fix for permitted actions with no resolved principal.
 
@@ -186,14 +229,7 @@ def _authority_gap_recommendation(bare_unaccounted: int, named_unbound: int, nou
     )
 
 
-def _authority_resolution(
-    record: dict[str, Any],
-    approvals_by_fingerprint: dict[str | int, list[dict[str, Any]]],
-    approvals_by_id: dict[str | int, list[dict[str, Any]]],
-    fingerprint_uses: dict[str | int, int],
-    approval_id_uses: dict[str | int, int],
-    approval_record_uses: dict[int, int],
-) -> tuple[bool, bool]:
+def _authority_resolution(record: dict[str, Any], approvals: _ApprovalJoins) -> tuple[bool, bool]:
     """Return ``(resolved, ambiguous)`` for one permitted action."""
     if _local_approval_conflicts(record) or _approval_claim_is_explicitly_invalid(record):
         return False, True
@@ -206,22 +242,25 @@ def _authority_resolution(
         and envelope_fingerprint != fingerprint
     ):
         return False, True
-    if envelope_fingerprint is not None and fingerprint_uses.get(envelope_fingerprint, 0) != 1:
+    if (
+        envelope_fingerprint is not None
+        and approvals.fingerprint_uses.get(envelope_fingerprint, 0) != 1
+    ):
         return False, True
     if _approval_envelope_resolves(record):
         if approval_id is not None:
-            if approval_id_uses.get(approval_id, 0) != 1:
+            if approvals.id_uses.get(approval_id, 0) != 1:
                 return False, True
-            external_candidates = approvals_by_id.get(approval_id, [])
+            external_candidates = approvals.by_id.get(approval_id, [])
         else:
             binding_fingerprint = fingerprint if fingerprint is not None else envelope_fingerprint
             if (
                 binding_fingerprint is not None
-                and fingerprint_uses.get(binding_fingerprint, 0) != 1
+                and approvals.fingerprint_uses.get(binding_fingerprint, 0) != 1
             ):
                 return False, True
             external_candidates = (
-                approvals_by_fingerprint.get(binding_fingerprint, [])
+                approvals.by_fingerprint.get(binding_fingerprint, [])
                 if binding_fingerprint is not None
                 else []
             )
@@ -229,7 +268,7 @@ def _authority_resolution(
             return False, True
         if external_candidates:
             candidate = external_candidates[0]
-            if approval_record_uses.get(id(candidate), 0) != 1:
+            if approvals.record_uses.get(id(candidate), 0) != 1:
                 return False, True
             candidate_fingerprint = _approval_fingerprint(candidate)
             expected_fingerprint = fingerprint if fingerprint is not None else envelope_fingerprint
@@ -243,18 +282,18 @@ def _authority_resolution(
                 )
                 or (
                     candidate_fingerprint is not None
-                    and len(approvals_by_fingerprint.get(candidate_fingerprint, [])) != 1
+                    and len(approvals.by_fingerprint.get(candidate_fingerprint, [])) != 1
                 )
             ):
                 return False, True
         return True, False
     if approval_id is not None:
-        candidates = approvals_by_id.get(approval_id, [])
+        candidates = approvals.by_id.get(approval_id, [])
         if len(candidates) == 1:
             candidate_fingerprint = _approval_fingerprint(candidates[0])
             if (
                 candidate_fingerprint is not None
-                and len(approvals_by_fingerprint.get(candidate_fingerprint, [])) != 1
+                and len(approvals.by_fingerprint.get(candidate_fingerprint, [])) != 1
             ):
                 return False, True
             if (
@@ -263,14 +302,14 @@ def _authority_resolution(
                 and candidate_fingerprint != fingerprint
             ):
                 return False, True
-        use_count = approval_id_uses.get(approval_id, 0)
+        use_count = approvals.id_uses.get(approval_id, 0)
     else:
         candidates = (
-            approvals_by_fingerprint.get(fingerprint, []) if fingerprint is not None else []
+            approvals.by_fingerprint.get(fingerprint, []) if fingerprint is not None else []
         )
-        use_count = fingerprint_uses.get(fingerprint, 0) if fingerprint is not None else 0
+        use_count = approvals.fingerprint_uses.get(fingerprint, 0) if fingerprint is not None else 0
     if candidates and any(
-        approval_record_uses.get(id(candidate), 0) != 1
+        approvals.record_uses.get(id(candidate), 0) != 1
         or _local_approval_conflicts(candidate)
         or _approval_claim_is_explicitly_invalid(candidate)
         or not _artifact_is_acceptable(candidate)
@@ -375,25 +414,7 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
             detail=f"no permitted actions ({denied} denial(s) excluded)",
         )
 
-    fingerprint_uses: dict[str | int, int] = {}
-    approval_id_uses: dict[str | int, int] = {}
-    for record in permitted:
-        fingerprints = {
-            key
-            for value in (
-                record.get("request_fingerprint"),
-                _approval_fingerprint(record),
-            )
-            if (key := _scalar_key(value)) is not None
-        }
-        for key in fingerprints:
-            fingerprint_uses[key] = fingerprint_uses.get(key, 0) + 1
-        approval_id = _approval_id(record)
-        if approval_id is not None:
-            approval_id_uses[approval_id] = approval_id_uses.get(approval_id, 0) + 1
-    approval_record_uses = _approval_record_uses(
-        permitted, approvals_by_fingerprint, approvals_by_id
-    )
+    approvals = _approval_joins(permitted, approvals_by_fingerprint, approvals_by_id)
 
     attributed = delegated = unresolved = policy_only = unaccounted = named_unbound = 0
     ambiguous = confidence_limited = 0
@@ -405,14 +426,7 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
             if _approver_named(record):
                 named_unbound += 1
             continue
-        resolved, approval_ambiguous = _authority_resolution(
-            record,
-            approvals_by_fingerprint,
-            approvals_by_id,
-            fingerprint_uses,
-            approval_id_uses,
-            approval_record_uses,
-        )
+        resolved, approval_ambiguous = _authority_resolution(record, approvals)
         if approval_ambiguous:
             ambiguous += 1
         elif resolved:

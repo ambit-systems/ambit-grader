@@ -713,6 +713,6 @@ def match(record: dict[str, Any]) -> Profile | None:
         try:
             if profile.detect(record):
                 return profile
-        except (AttributeError, TypeError):  # pragma: no cover - defensive
+        except AttributeError, TypeError:  # pragma: no cover - defensive
             continue
     return None

@@ -10,7 +10,7 @@ name = "ambit-grader"
 version = "0.2.0"
 description = "Grades what execution evidence can and cannot prove about who authorised an action"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 authors = [{ name = "Ambit Systems" }]
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -22,8 +22,7 @@ classifiers = [
   "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Security",
   "Topic :: Software Development :: Quality Assurance",
   "Typing :: Typed",
@@ -56,7 +55,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 100
 src = ["src", "tests"]
 
@@ -79,7 +78,7 @@ convention = "google"
 docstring-code-format = true
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 files = ["src", "tests"]
 strict = true
 warn_unused_ignores = true

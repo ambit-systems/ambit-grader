@@ -454,6 +454,126 @@ def _tally_accountable(
     return tally
 
 
+def _authority_verdict(
+    tally: _AuthorityTally,
+    *,
+    accountable_count: int,
+    unsupported: int,
+    attributed_share: float,
+    detail: str,
+) -> PropertyVerdict:
+    """Choose the principal-authority verdict from the tally, in order of precedence."""
+    if tally.ambiguous or unsupported:
+        problems = []
+        if tally.ambiguous:
+            problems.append(f"disambiguate {tally.ambiguous} approval join(s)")
+        if unsupported:
+            problems.append(f"correct {unsupported} unsupported decision verdict(s)")
+        return PropertyVerdict(
+            Property.PRINCIPAL_AUTHORITY,
+            Sufficiency.CONFLICTING,
+            confidence=attributed_share,
+            recommendation=" and ".join(problems),
+            detail=detail,
+        )
+    if tally.unresolved:
+        return PropertyVerdict(
+            Property.PRINCIPAL_AUTHORITY,
+            Sufficiency.STRUCTURALLY_UNFILLABLE,
+            # Not "never persisted": an escalation implies an approval step,
+            # and the approval plausibly exists in a ticketing or IdP system
+            # this evidence set does not span. The distinction changes the
+            # remedy — go and join the other system, rather than start
+            # emitting something nobody emits.
+            reason=UnfillableReason.CROSS_STACK_BOUNDARY,
+            recommendation=(
+                f"link the {tally.unresolved} unresolved escalation(s) to an approval record "
+                "carrying a named approver"
+            ),
+            detail=detail,
+        )
+    if tally.unaccounted == accountable_count:
+        # Nothing recoverable at all. `partially_fillable` means recoverable
+        # evidence plus a gap description; where every permitted action lacks
+        # a principal, a policy and a delegation alike, there is no evidence
+        # to partially recover and reporting one would be generous. An
+        # unbound name is no more recoverable than no name — see
+        # _authority_gap_recommendation for why the remedy still differs.
+        return PropertyVerdict(
+            Property.PRINCIPAL_AUTHORITY,
+            Sufficiency.STRUCTURALLY_UNFILLABLE,
+            reason=UnfillableReason.EVIDENCE_NEVER_PERSISTED,
+            recommendation=_authority_gap_recommendation(
+                tally.bare_unaccounted, tally.named_unbound, "permitted action(s)"
+            ),
+            detail=detail,
+        )
+    if tally.unaccounted:
+        return PropertyVerdict(
+            Property.PRINCIPAL_AUTHORITY,
+            Sufficiency.PARTIALLY_FILLABLE,
+            confidence=attributed_share,
+            recommendation=_authority_gap_recommendation(
+                tally.bare_unaccounted, tally.named_unbound, "bare allow(s)"
+            ),
+            detail=detail,
+        )
+    if tally.delegated:
+        # Capped deliberately. A corpus of nothing but delegations would
+        # otherwise report full attribution with no principal anywhere in the
+        # evidence — the grader flattering its own vendor's artifact.
+        return PropertyVerdict(
+            Property.PRINCIPAL_AUTHORITY,
+            Sufficiency.PARTIALLY_FILLABLE,
+            confidence=attributed_share,
+            recommendation=(
+                f"evidence the issuer of the {tally.delegated} delegation(s) — record who granted "
+                "the delegation, or sign it asymmetrically so a trust root identifies them; "
+                "an HMAC token cannot, because its verify key is its forge key"
+            ),
+            detail=detail,
+        )
+    if tally.confidence_limited:
+        recommendation = (
+            f"raise confidence for the {tally.confidence_limited} attested policy identity "
+            "claim(s) to 1.0 before treating their actions as fully attributable"
+        )
+        if tally.policy_only:
+            recommendation += (
+                f"; attest the policy that permitted the {tally.policy_only} "
+                "other automatic allow(s)"
+            )
+        return PropertyVerdict(
+            Property.PRINCIPAL_AUTHORITY,
+            Sufficiency.PARTIALLY_FILLABLE,
+            confidence=attributed_share,
+            recommendation=recommendation,
+            detail=detail,
+        )
+    if tally.attributed and not tally.policy_only:
+        return PropertyVerdict(
+            Property.PRINCIPAL_AUTHORITY, Sufficiency.FULLY_FILLABLE, detail=detail
+        )
+    if tally.attributed or tally.policy_only:
+        return PropertyVerdict(
+            Property.PRINCIPAL_AUTHORITY,
+            Sufficiency.PARTIALLY_FILLABLE,
+            confidence=attributed_share,
+            recommendation=(
+                f"attest the policy that permitted the {tally.policy_only} automatic allow(s) — "
+                "bind policy_hash to a signed record naming who approved that policy"
+            ),
+            detail=detail,
+        )
+    return PropertyVerdict(
+        Property.PRINCIPAL_AUTHORITY,
+        Sufficiency.STRUCTURALLY_UNFILLABLE,
+        reason=UnfillableReason.EVIDENCE_NEVER_PERSISTED,
+        recommendation="emit a policy identity or an approval for every permitted action",
+        detail=detail,
+    )
+
+
 def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
     """Grade whether every authority-requiring action names a principal.
 
@@ -534,113 +654,11 @@ def principal_authority(records: list[dict[str, Any]]) -> PropertyVerdict:
         f"({denied} denial(s) excluded)"
     )
 
-    if tally.ambiguous or unsupported:
-        problems = []
-        if tally.ambiguous:
-            problems.append(f"disambiguate {tally.ambiguous} approval join(s)")
-        if unsupported:
-            problems.append(f"correct {unsupported} unsupported decision verdict(s)")
-        return PropertyVerdict(
-            Property.PRINCIPAL_AUTHORITY,
-            Sufficiency.CONFLICTING,
-            confidence=attributed_share,
-            recommendation=" and ".join(problems),
-            detail=detail,
-        )
-    if tally.unresolved:
-        return PropertyVerdict(
-            Property.PRINCIPAL_AUTHORITY,
-            Sufficiency.STRUCTURALLY_UNFILLABLE,
-            # Not "never persisted": an escalation implies an approval step,
-            # and the approval plausibly exists in a ticketing or IdP system
-            # this evidence set does not span. The distinction changes the
-            # remedy — go and join the other system, rather than start
-            # emitting something nobody emits.
-            reason=UnfillableReason.CROSS_STACK_BOUNDARY,
-            recommendation=(
-                f"link the {tally.unresolved} unresolved escalation(s) to an approval record "
-                "carrying a named approver"
-            ),
-            detail=detail,
-        )
-    if tally.unaccounted == len(accountable):
-        # Nothing recoverable at all. `partially_fillable` means recoverable
-        # evidence plus a gap description; where every permitted action lacks
-        # a principal, a policy and a delegation alike, there is no evidence
-        # to partially recover and reporting one would be generous. An
-        # unbound name is no more recoverable than no name — see
-        # _authority_gap_recommendation for why the remedy still differs.
-        return PropertyVerdict(
-            Property.PRINCIPAL_AUTHORITY,
-            Sufficiency.STRUCTURALLY_UNFILLABLE,
-            reason=UnfillableReason.EVIDENCE_NEVER_PERSISTED,
-            recommendation=_authority_gap_recommendation(
-                tally.bare_unaccounted, tally.named_unbound, "permitted action(s)"
-            ),
-            detail=detail,
-        )
-    if tally.unaccounted:
-        return PropertyVerdict(
-            Property.PRINCIPAL_AUTHORITY,
-            Sufficiency.PARTIALLY_FILLABLE,
-            confidence=attributed_share,
-            recommendation=_authority_gap_recommendation(
-                tally.bare_unaccounted, tally.named_unbound, "bare allow(s)"
-            ),
-            detail=detail,
-        )
-    if tally.delegated:
-        # Capped deliberately. A corpus of nothing but delegations would
-        # otherwise report full attribution with no principal anywhere in the
-        # evidence — the grader flattering its own vendor's artifact.
-        return PropertyVerdict(
-            Property.PRINCIPAL_AUTHORITY,
-            Sufficiency.PARTIALLY_FILLABLE,
-            confidence=attributed_share,
-            recommendation=(
-                f"evidence the issuer of the {tally.delegated} delegation(s) — record who granted "
-                "the delegation, or sign it asymmetrically so a trust root identifies them; "
-                "an HMAC token cannot, because its verify key is its forge key"
-            ),
-            detail=detail,
-        )
-    if tally.confidence_limited:
-        recommendation = (
-            f"raise confidence for the {tally.confidence_limited} attested policy identity "
-            "claim(s) to 1.0 before treating their actions as fully attributable"
-        )
-        if tally.policy_only:
-            recommendation += (
-                f"; attest the policy that permitted the {tally.policy_only} "
-                "other automatic allow(s)"
-            )
-        return PropertyVerdict(
-            Property.PRINCIPAL_AUTHORITY,
-            Sufficiency.PARTIALLY_FILLABLE,
-            confidence=attributed_share,
-            recommendation=recommendation,
-            detail=detail,
-        )
-    if tally.attributed and not tally.policy_only:
-        return PropertyVerdict(
-            Property.PRINCIPAL_AUTHORITY, Sufficiency.FULLY_FILLABLE, detail=detail
-        )
-    if tally.attributed or tally.policy_only:
-        return PropertyVerdict(
-            Property.PRINCIPAL_AUTHORITY,
-            Sufficiency.PARTIALLY_FILLABLE,
-            confidence=attributed_share,
-            recommendation=(
-                f"attest the policy that permitted the {tally.policy_only} automatic allow(s) — "
-                "bind policy_hash to a signed record naming who approved that policy"
-            ),
-            detail=detail,
-        )
-    return PropertyVerdict(
-        Property.PRINCIPAL_AUTHORITY,
-        Sufficiency.STRUCTURALLY_UNFILLABLE,
-        reason=UnfillableReason.EVIDENCE_NEVER_PERSISTED,
-        recommendation="emit a policy identity or an approval for every permitted action",
+    return _authority_verdict(
+        tally,
+        accountable_count=len(accountable),
+        unsupported=unsupported,
+        attributed_share=attributed_share,
         detail=detail,
     )
 

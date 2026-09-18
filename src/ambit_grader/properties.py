@@ -83,8 +83,11 @@ def policy_basis(record: dict[str, Any]) -> tuple[Sufficiency, float]:
     nested_valid = is_text(nested)
     if flat_valid and nested_valid and flat != nested:
         return Sufficiency.CONFLICTING, 0.0
+    # The decision rule and the naming-registry identifier are different
+    # namespaces. Only `decision.matched_rule_id` repeats the logical decision
+    # rule the envelope promotes as `matched_rule_id`.
     flat_rule = dig(record, "matched_rule_id")
-    nested_rule = dig(record, "evidence.naming.matched_rule_id")
+    nested_rule = dig(record, "decision.matched_rule_id")
     flat_rule_valid = is_text(flat_rule)
     nested_rule_valid = is_text(nested_rule)
     if flat_rule_valid and nested_rule_valid and flat_rule != nested_rule:

@@ -164,6 +164,7 @@ class _ApprovalJoins:
     by_fingerprint: dict[str | int, list[dict[str, Any]]]
     by_id: dict[str | int, list[dict[str, Any]]]
     fingerprint_uses: dict[str | int, int]
+    fingerprint_users: dict[str | int, list[dict[str, Any]]]
     id_uses: dict[str | int, int]
     record_uses: dict[int, int]
 
@@ -175,6 +176,7 @@ def _approval_joins(
 ) -> _ApprovalJoins:
     """Count the join handles the permitted actions use, beside the approval indexes."""
     fingerprint_uses: dict[str | int, int] = {}
+    fingerprint_users: dict[str | int, list[dict[str, Any]]] = {}
     approval_id_uses: dict[str | int, int] = {}
     for record in permitted:
         fingerprints = {
@@ -187,6 +189,7 @@ def _approval_joins(
         }
         for key in fingerprints:
             fingerprint_uses[key] = fingerprint_uses.get(key, 0) + 1
+            fingerprint_users.setdefault(key, []).append(record)
         approval_id = _approval_id(record)
         if approval_id is not None:
             approval_id_uses[approval_id] = approval_id_uses.get(approval_id, 0) + 1
@@ -194,9 +197,36 @@ def _approval_joins(
         by_fingerprint=approvals_by_fingerprint,
         by_id=approvals_by_id,
         fingerprint_uses=fingerprint_uses,
+        fingerprint_users=fingerprint_users,
         id_uses=approval_id_uses,
         record_uses=_approval_record_uses(permitted, approvals_by_fingerprint, approvals_by_id),
     )
+
+
+def _fingerprint_uses_for_envelope(
+    record: dict[str, Any], fingerprint: str | int, approvals: _ApprovalJoins
+) -> int:
+    """Count an envelope's uses, excluding its hash-bound predecessor escalation.
+
+    A native approval that states the hash of the prior ESCALATE receipt
+    resolves that same request. The escalation and subsequent accepted use
+    therefore legitimately share a request fingerprint; a second action does
+    not. The exact hash and its bound marker are both required before the
+    predecessor is excluded.
+    """
+    uses = approvals.fingerprint_uses.get(fingerprint, 0)
+    escalation_hash = dig(record, "approval.escalation_record_hash")
+    if dig(record, "approval.escalation_record_hash_bound") is not True or not is_text(
+        escalation_hash
+    ):
+        return uses
+    linked_escalations = [
+        candidate
+        for candidate in approvals.fingerprint_users.get(fingerprint, [])
+        if candidate.get("decision") == "ESCALATE"
+        and candidate.get("record_hash") == escalation_hash
+    ]
+    return uses - 1 if len(linked_escalations) == 1 else uses
 
 
 def _authority_gap_recommendation(bare_unaccounted: int, named_unbound: int, noun: str) -> str:
@@ -244,7 +274,7 @@ def _authority_resolution(record: dict[str, Any], approvals: _ApprovalJoins) -> 
         return False, True
     if (
         envelope_fingerprint is not None
-        and approvals.fingerprint_uses.get(envelope_fingerprint, 0) != 1
+        and _fingerprint_uses_for_envelope(record, envelope_fingerprint, approvals) != 1
     ):
         return False, True
     if _approval_envelope_resolves(record):
@@ -271,7 +301,7 @@ def _envelope_resolution(
     else:
         if (
             binding_fingerprint is not None
-            and approvals.fingerprint_uses.get(binding_fingerprint, 0) != 1
+            and _fingerprint_uses_for_envelope(record, binding_fingerprint, approvals) != 1
         ):
             return False, True
         external_candidates = (

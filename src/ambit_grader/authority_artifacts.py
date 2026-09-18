@@ -216,14 +216,18 @@ def _local_approval_conflicts(record: dict[str, Any]) -> bool:
 def _approval_claim_is_explicitly_invalid(record: dict[str, Any]) -> bool:
     """Return True when a substantive local approval claim asserts invalidity."""
     approval = record.get("approval")
+    # A request fingerprint belongs to the decision even when no approval was
+    # offered. It cannot make the native empty approval envelope substantive.
     flat_substance = (
         is_identifier(record.get("approver"))
         or is_identifier(record.get("approval_approver"))
         or _approval_id(record) is not None
         or _approval_fingerprint(record) is not None
         or record.get("fingerprint_bound") is True
-        or _scalar_key(record.get("request_fingerprint")) is not None
     )
+    # Native receipts use `valid: false`, `kind: unknown`, and null handles to
+    # state absence. A non-unknown kind proves a credential was presented even
+    # when parsing did not recover an identity, so invalidity remains material.
     nested_substance = isinstance(approval, dict) and (
         is_identifier(approval.get("approver"))
         or any(
@@ -231,6 +235,7 @@ def _approval_claim_is_explicitly_invalid(record: dict[str, Any]) -> bool:
             for field in ("approval_jti", "jti", "id", "fingerprint", "request_fingerprint")
         )
         or approval.get("fingerprint_bound") is True
+        or (is_text(approval.get("kind")) and approval["kind"].strip().casefold() != "unknown")
     )
     return (
         flat_substance

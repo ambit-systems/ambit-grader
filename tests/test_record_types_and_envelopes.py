@@ -318,9 +318,23 @@ def test_receipt_payload_shape_does_not_crash_the_grader():
         "object": {"kind": "path", "id": "/tmp/a", "domain": "filesystem"},
         "decision": {
             "outcome": "allow",
+            "matched_rule_id": "authorized_allow",
             "reasons": [{"rule_id": "sandbox_boundary", "result": "pass", "details": None}],
         },
-        "evidence": {"hashes": {"policy_hash": "9f2c41ab", "request_fingerprint": "fp-1"}},
+        "evidence": {
+            "hashes": {"policy_hash": "9f2c41ab", "request_fingerprint": "fp-1"},
+            "naming": {"matched_rule_id": "nr:7cb11aec62250670"},
+        },
+        "approval": {
+            "approver": None,
+            "fingerprint": None,
+            "fingerprint_bound": False,
+            "id": None,
+            "jti": None,
+            "kind": "unknown",
+            "signature_valid": False,
+            "valid": False,
+        },
         "delegation": {
             "id": "d-1",
             "jti": "d-1",
@@ -329,16 +343,18 @@ def test_receipt_payload_shape_does_not_crash_the_grader():
             "valid": True,
         },
     }
+    normalised = normalise([payload_shape]).records[0]
+    assert normalised["matched_rule_id"] == "authorized_allow"
     graded = grade_records("payload", [payload_shape])
 
     assert graded.unrecognised == 0
     assert "ambit_receipt_payload" in graded.shapes
     # The object verdict was read, so the action counts as permitted.
     assert "1 permitted action(s)" in (graded.verdicts[Property.PRINCIPAL_AUTHORITY].detail or "")
-    # Nested hashes and reasons were lifted onto canonical paths.
-    assert graded.verdicts[Property.POLICY_BASIS].sufficiency is not (
-        Sufficiency.STRUCTURALLY_UNFILLABLE
-    )
+    # The logical decision rule is separate from the naming-registry identity.
+    assert graded.verdicts[Property.POLICY_BASIS].sufficiency is Sufficiency.FULLY_FILLABLE
+    # The canonical absent-approval block is not a failed approval attempt.
+    assert graded.verdicts[Property.PRINCIPAL_AUTHORITY].sufficiency is Sufficiency.FULLY_FILLABLE
 
 
 def test_unreadable_records_are_counted_not_raised():

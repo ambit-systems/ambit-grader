@@ -149,6 +149,18 @@ The two can disagree, and the disagreement is the finding. On the two shipped fi
 
 **Naming an approver is not binding one.** An adapter sets `fingerprint_bound` only when the source record carries evidence tying that approver to this request: a request fingerprint or action hash the approval references. None of the six third-party formats carries that evidence, so a foreign approver is always recorded and never counted as bound. A separate approval must also carry its existing positive identity (`approval_jti` or `valid: true`). Approval fingerprints are one-to-one: duplicate candidates or reuse of one fingerprint across distinct actions is reported as `conflicting`, not resolved by input order.
 
+A native decision's empty approval envelope (`valid: false`, `kind: unknown`, no
+approval identity or positive binding) states absence. The decision's own request
+fingerprint does not turn it into an approval claim. An escalation followed by its
+accepted resolution counts as one approval use only when the approval explicitly
+binds to that escalation's record hash in the same request-fingerprint group.
+Duplicate escalations, unmatched links and repeated accepted uses remain ambiguous.
+
+A logical matched-rule identifier and a naming-registry identifier are different
+namespaces. The grader compares logical copies with each other and policy hashes
+with each other; it does not infer a conflict merely because a rule's name differs
+from its registry identifier.
+
 **Two properties are corpus-level.** `principal_authority` and `verification_strength` are not scored per record. Their evidence lives in the joins between records: an escalation and the approval that resolved it, a hash and the record it chains to. Scoring them per record is the container fallacy: mistaking the presence of an evidence container for the sufficiency of the evidence. `tests/test_container_fallacy.py` locks this in, including the case where a corpus with higher DEMM completeness scores worse on authority because its joins are broken.
 
 | Class | Verdict |

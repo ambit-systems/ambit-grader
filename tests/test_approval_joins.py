@@ -198,6 +198,42 @@ def test_reused_embedded_approval_evidence_is_conflicting():
         assert "2 with an ambiguous approval join" in (verdict.detail or "")
 
 
+def test_hash_bound_escalation_predecessor_is_not_an_approval_reuse():
+    escalation = _decision(
+        0,
+        "ESCALATE",
+        "0" * 64,
+        "escalation-hash",
+        request_fingerprint="request-fingerprint",
+        delegation={
+            "id": "delegation-1",
+            "kind": "ed25519_token",
+            "valid": True,
+            "trust_root_id": "delegator",
+        },
+    )
+    accepted = _decision(
+        1,
+        "ALLOW",
+        "escalation-hash",
+        "accepted-hash",
+        request_fingerprint="request-fingerprint",
+        approval={
+            "jti": "approval-1",
+            "approver": "alice",
+            "fingerprint": "request-fingerprint",
+            "fingerprint_bound": True,
+            "valid": True,
+            "escalation_record_hash": "escalation-hash",
+            "escalation_record_hash_bound": True,
+        },
+    )
+    assert principal_authority([escalation, accepted]).sufficiency is Sufficiency.FULLY_FILLABLE
+
+    accepted["approval"]["escalation_record_hash"] = "other-escalation-hash"
+    assert principal_authority([escalation, accepted]).sufficiency is Sufficiency.CONFLICTING
+
+
 def test_embedded_approval_conflict_with_external_record_is_not_ignored():
     records = [
         _decision(

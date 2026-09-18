@@ -534,14 +534,43 @@ def test_flat_and_nested_approval_claims_are_reconciled_before_selection():
                 "approval_approver": "alice",
             },
         ]
-        for corpus in (
-            minimal_external,
-            minimal_decision,
-            minimal_request_fingerprint,
-        ):
+        for corpus in (minimal_external, minimal_decision):
             verdict = principal_authority(corpus)
             assert verdict.sufficiency is Sufficiency.CONFLICTING
             assert "0 attributable to a named principal" in (verdict.detail or "")
+        assert (
+            principal_authority(minimal_request_fingerprint).sufficiency
+            is Sufficiency.FULLY_FILLABLE
+        )
+
+
+def test_native_absent_approval_is_not_an_invalid_attempt():
+    canonical_absence = {
+        "approver": None,
+        "fingerprint": None,
+        "fingerprint_bound": False,
+        "id": None,
+        "jti": None,
+        "kind": "unknown",
+        "signature_valid": False,
+        "valid": False,
+    }
+    absent = _decision(
+        0,
+        "ALLOW",
+        "0" * 64,
+        "h1",
+        policy_hash="policy-1",
+        request_fingerprint="fp",
+        approval=canonical_absence,
+    )
+    attempted = {
+        **absent,
+        "approval": {**canonical_absence, "kind": "p256_token", "signature_valid": True},
+    }
+
+    assert principal_authority([absent]).sufficiency is Sufficiency.PARTIALLY_FILLABLE
+    assert principal_authority([attempted]).sufficiency is Sufficiency.CONFLICTING
 
 
 def test_authority_status_and_delegation_kind_values_are_closed_sets():

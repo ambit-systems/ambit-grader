@@ -249,7 +249,7 @@ def _lift_native_fields(out: dict[str, Any], native_record: dict[str, Any]) -> N
             out.pop("tool_name", None)
 
     if not is_text(out.get("matched_rule_id")):
-        lifted = dig(native_record, "evidence.naming.matched_rule_id")
+        lifted = dig(native_record, "decision.matched_rule_id")
         if is_text(lifted):
             out["matched_rule_id"] = lifted
 

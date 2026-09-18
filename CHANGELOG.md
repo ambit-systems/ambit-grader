@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Compare logical matched-rule identifiers with their logical copies, not with
+  naming-registry identifiers from a different namespace.
+- Treat the native empty approval envelope as absence, not an invalid approval
+  merely because the decision carries a request fingerprint. Substantive invalid
+  approval claims remain conflicting.
+- Recognise one escalation and its accepted, hash-bound resolution as one approval
+  use. Reused approvals, duplicate escalations and mismatched links remain ambiguous.
+
 ### Changed
 
 - The report label `Ambit authority verdict` reads `Ambit Authority verdict`.

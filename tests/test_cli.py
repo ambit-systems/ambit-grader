@@ -442,16 +442,12 @@ def test_malformed_timestamp_cannot_raise_completeness_past_a_gate(tmp_path, cap
     "conflict",
     [
         {
-            "matched_rule_id": "rule-flat",
-            "evidence": {"naming": {"matched_rule_id": "rule-nested"}},
-        },
-        {
             "ts": "2026-01-01T00:00:00Z",
             "timestamp_utc": "2026-01-01T00:00:01+00:00",
         },
     ],
 )
-def test_semantic_alias_conflicts_cannot_raise_completeness_past_gate(tmp_path, capsys, conflict):
+def test_semantic_conflicts_cannot_raise_completeness_past_gate(tmp_path, capsys, conflict):
     valid_record = {
         "record_type": "decision",
         "decision": "ALLOW",

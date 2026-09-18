@@ -79,20 +79,29 @@ def test_policy_basis_detects_disagreeing_copies():
     assert policy_basis(record)[0] is Sufficiency.CONFLICTING
 
 
-def test_policy_basis_detects_disagreeing_rule_aliases():
+def test_policy_basis_keeps_rule_and_naming_registry_namespaces_distinct():
+    record = {
+        "policy_hash": "policy-1",
+        "matched_rule_id": "authorized_allow",
+        "evidence": {"naming": {"matched_rule_id": "nr:7cb11aec62250670"}},
+    }
+    assert policy_basis(record)[0] is Sufficiency.FULLY_FILLABLE
+
+
+def test_policy_basis_detects_disagreeing_logical_rule_copies():
     record = {
         "policy_hash": "policy-1",
         "matched_rule_id": "rule-flat",
-        "evidence": {"naming": {"matched_rule_id": "rule-nested"}},
+        "decision": {"matched_rule_id": "rule-nested"},
     }
     assert policy_basis(record) == (Sufficiency.CONFLICTING, 0.0)
 
 
-def test_policy_basis_accepts_matching_rule_aliases():
+def test_policy_basis_accepts_matching_logical_rule_copies():
     record = {
         "policy_hash": "policy-1",
         "matched_rule_id": "rule-1",
-        "evidence": {"naming": {"matched_rule_id": "rule-1"}},
+        "decision": {"matched_rule_id": "rule-1"},
     }
     assert policy_basis(record)[0] is Sufficiency.FULLY_FILLABLE
 

@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   README, AGENTS.md and the module docstrings now name Ambit Authority
   instead of using a possessive form of the company name.
 - Require Python 3.14.
+- Document compatibility with retained `customer-delete/1` evidence: grading
+  does not add a deletion command, establish the receiver effect, or expand
+  replay coverage; signed canonical-bundle verification remains the applicable
+  effect check. `record-egress/1` remains separate.
 
 ## [0.2.0] — public release under Apache-2.0
 

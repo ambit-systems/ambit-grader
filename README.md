@@ -86,7 +86,7 @@ Errors go to stderr. The report goes to stdout, so `--format json` output stays 
 
 ## Output
 
-Text output (default): one header and one headline sentence per file, then a table with one column per file. The table has eight property rows, a `DEMM completeness (7 rows)` row and an `Ambit Authority verdict` row. Two fixed notes follow that explain the two aggregates.
+Text output (default): one header and one headline sentence per file, then a table with one column per file. The table has eight property rows, a `DEMM completeness` row and an `Ambit Authority verdict` row. Two fixed notes follow that explain the two aggregates.
 
 JSON output (`--format json`): a list with one object per file.
 

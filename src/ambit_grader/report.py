@@ -76,12 +76,11 @@ def _aggregate_notes() -> list[str]:
     """Return the two fixed notes that explain the two aggregates."""
     notes: list[str] = []
     notes.append(
-        "DEMM completeness is the 3.5 weighted average over the seven v0.1.0 "
-        "implementation rows. A partially-fillable property carries its own 3.5 "
-        "confidence — the share of cases it is actually fillable for — rather than "
-        "the reference implementation's flat 0.5 default, which the paper states is "
-        "uncalibrated. Completeness is therefore protocol-relative and comparable "
-        "across runs of this tool, not an absolute score."
+        "DEMM completeness is a weighted average over the evidence properties. A "
+        "partly fillable property counts at the share of cases it can be filled for, "
+        "not at a fixed 0.5. The score is an unvalidated indicator: it is not "
+        "calibrated against real incidents. Use it to compare runs of this tool, "
+        "not as an absolute measure."
     )
     notes.append(
         "The Ambit Authority verdict is the weakest of "
@@ -119,7 +118,7 @@ def render_text(grades: list[Grade]) -> str:
         lines.extend(_gap_detail_lines(grade))
     lines.append("-" * len(header))
     lines.append(
-        f"{'DEMM completeness (7 rows)':<{_LABEL}}"
+        f"{'DEMM completeness':<{_LABEL}}"
         + "".join(f"{g.completeness:>{_COLUMN}.1%}" for g in grades)
     )
     lines.append(
